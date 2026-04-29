@@ -3,6 +3,9 @@ use std::sync::{
     Arc,
 };
 
+mod config;
+
+use config::AppConfig;
 use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -11,13 +14,18 @@ use tauri::{
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            let config = AppConfig::load_or_create()?;
+            let normal_title = Arc::new(config.normal_title());
+            let stealth_title = Arc::new(config.stealth_title().to_string());
             let is_hidden = Arc::new(AtomicBool::new(false));
             let toggle_state = Arc::clone(&is_hidden);
+            let click_normal_title = Arc::clone(&normal_title);
+            let click_stealth_title = Arc::clone(&stealth_title);
 
             TrayIconBuilder::new()
                 .icon(menu_bar_icon())
                 .icon_as_template(true)
-                .title("Aura")
+                .title(normal_title.as_str())
                 .tooltip("AuraCalendar")
                 .on_tray_icon_event(move |tray, event| {
                     if let TrayIconEvent::Click {
@@ -27,7 +35,11 @@ fn main() {
                     } = event
                     {
                         let next_hidden = !toggle_state.fetch_xor(true, Ordering::Relaxed);
-                        let title = if next_hidden { "***" } else { "Aura" };
+                        let title = if next_hidden {
+                            click_stealth_title.as_str()
+                        } else {
+                            click_normal_title.as_str()
+                        };
 
                         if let Err(error) = tray.set_title(Some(title)) {
                             eprintln!("failed to update tray title: {error}");

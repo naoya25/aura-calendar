@@ -46,6 +46,19 @@ cd aura-calendar
 cargo run
 ```
 
+## 開発チェック
+
+Pull Request と `main` への push では、GitHub Actions で以下を実行します。
+
+```bash
+cargo fmt --all --check
+cargo check --locked
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked
+```
+
+`cargo check` は Rust の型チェックとコンパイル可能性を高速に確認するコマンドです。React/TypeScript でいう型チェックに近く、成果物の生成までは行いません。
+
 ## 配布方針
 
 AuraCalendar は macOS 向けに `.dmg` 形式で配布する予定です。

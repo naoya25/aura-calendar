@@ -2,20 +2,28 @@ use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc}
 use rrule::{RRule, RRuleSet, Tz};
 use std::collections::HashSet;
 use std::str::FromStr;
+use thiserror::Error;
 
 use crate::config::AppConfig;
 
-pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, reqwest::Error> {
+const REQUEST_TIMEOUT_SECONDS: u64 = 10;
+const USER_AGENT: &str = "aura-calendar/0.1";
+
+pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, CalendarError> {
     if config.calendars.is_empty() {
         return Ok(None);
     }
 
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
+        .user_agent(USER_AGENT)
+        .build()?;
     let now = Utc::now();
     let mut first_error: Option<reqwest::Error> = None;
     let mut best_event: Option<CalendarEvent> = None;
 
     for calendar in &config.calendars {
-        let response = match reqwest::get(&calendar.ical_url).await {
+        let response = match client.get(&calendar.ical_url).send().await {
             Ok(response) => response,
             Err(error) => {
                 if first_error.is_none() {
@@ -64,10 +72,18 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, reqw
     }
 
     if let Some(error) = first_error {
-        return Err(error);
+        return Err(CalendarError::Request(error));
     }
 
     Ok(None)
+}
+
+#[derive(Debug, Error)]
+pub enum CalendarError {
+    #[error("failed to build HTTP client: {0}")]
+    ClientBuild(#[from] reqwest::Error),
+    #[error("calendar request failed: {0}")]
+    Request(reqwest::Error),
 }
 
 #[derive(Debug)]
@@ -187,9 +203,7 @@ fn expand_recurring_event(
     let base_duration = end.map(|end_at| end_at - start);
     let mut events = Vec::new();
 
-    let parsed_rule = match RRule::from_str(rrule)
-        .and_then(|rule| rule.validate(start_tz))
-    {
+    let parsed_rule = match RRule::from_str(rrule).and_then(|rule| rule.validate(start_tz)) {
         Ok(rule) => rule,
         Err(_) => return events,
     };

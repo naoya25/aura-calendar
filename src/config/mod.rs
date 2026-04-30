@@ -4,6 +4,10 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+const DEFAULT_REFRESH_INTERVAL_SECONDS: u64 = 300;
+const MIN_REFRESH_INTERVAL_SECONDS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
@@ -30,7 +34,7 @@ impl Default for AppConfig {
         Self {
             calendars: Vec::new(),
             display: DisplayConfig::default(),
-            refresh_interval_seconds: 300,
+            refresh_interval_seconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
         }
     }
 }
@@ -46,11 +50,11 @@ impl Default for DisplayConfig {
 }
 
 impl AppConfig {
-    pub fn load_or_create() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_or_create() -> Result<Self, ConfigError> {
         Self::load_or_create_at(&config_path()?)
     }
 
-    fn load_or_create_at(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    fn load_or_create_at(path: &Path) -> Result<Self, ConfigError> {
         if path.exists() {
             let raw_config = fs::read_to_string(path)?;
             let loaded = Self::from_json(&raw_config)?;
@@ -65,12 +69,12 @@ impl AppConfig {
         Ok(config)
     }
 
-    fn from_json(raw_config: &str) -> Result<LoadedConfig, Box<dyn std::error::Error>> {
+    fn from_json(raw_config: &str) -> Result<LoadedConfig, ConfigError> {
         let raw_config: RawAppConfig = serde_json::from_str(raw_config)?;
         Ok(raw_config.into())
     }
 
-    fn save_to(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    fn save_to(&self, path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -135,11 +139,19 @@ impl From<RawAppConfig> for LoadedConfig {
             })
             .collect();
 
+        let refresh_interval_seconds =
+            if raw.refresh_interval_seconds < MIN_REFRESH_INTERVAL_SECONDS {
+                needs_normalization = true;
+                MIN_REFRESH_INTERVAL_SECONDS
+            } else {
+                raw.refresh_interval_seconds
+            };
+
         Self {
             config: AppConfig {
                 calendars,
                 display: raw.display,
-                refresh_interval_seconds: raw.refresh_interval_seconds,
+                refresh_interval_seconds,
             },
             needs_normalization,
         }
@@ -147,7 +159,15 @@ impl From<RawAppConfig> for LoadedConfig {
 }
 
 fn default_refresh_interval_seconds() -> u64 {
-    300
+    DEFAULT_REFRESH_INTERVAL_SECONDS
+}
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("failed to read/write config file: {0}")]
+    Io(#[from] io::Error),
+    #[error("failed to parse config JSON: {0}")]
+    Parse(#[from] serde_json::Error),
 }
 
 pub fn config_path() -> Result<PathBuf, io::Error> {
@@ -190,7 +210,7 @@ mod tests {
         assert_eq!(config, AppConfig::default());
         assert!(raw_config.contains("\"calendars\": []"));
 
-        let _ = fs::remove_dir_all(path.parent().unwrap());
+        let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
     }
 
     #[test]
@@ -205,6 +225,35 @@ mod tests {
         });
 
         assert_eq!(config.normal_title(), "Aura: calendar ready");
+    }
+
+    #[test]
+    fn load_or_create_should_normalize_too_small_refresh_interval() {
+        let path = temp_config_path();
+        fs::create_dir_all(path.parent().expect("temp path should have parent"))
+            .expect("temp directory should be creatable");
+        fs::write(
+            &path,
+            r#"{
+  "calendars": [],
+  "display": {
+    "normal_format": "{minutes_until}分後 {title}",
+    "stealth_format": "***",
+    "show_title": true
+  },
+  "refresh_interval_seconds": 1
+}
+"#,
+        )
+        .expect("seed config should be writable");
+
+        let config = AppConfig::load_or_create_at(&path).expect("config should load");
+        assert_eq!(
+            config.refresh_interval_seconds,
+            MIN_REFRESH_INTERVAL_SECONDS
+        );
+
+        let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
     }
 
     fn temp_config_path() -> PathBuf {

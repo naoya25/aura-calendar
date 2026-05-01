@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>AuraCalendar 設定</title>
+    <style>
+      :root {
+        --bg: #f5f5f7;
+        --card: #ffffff;
+        --border: #d1d1d6;
+        --accent: #007aff;
+        --accent-hover: #0062cc;
+        --danger: #ff3b30;
+        --text: #1c1c1e;
+        --text-secondary: #6c6c70;
+        --input-bg: #ffffff;
+        --shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+        font-size: 13px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1c1e;
+          --card: #2c2c2e;
+          --border: #3a3a3c;
+          --text: #f2f2f7;
+          --text-secondary: #8e8e93;
+          --input-bg: #3a3a3c;
+          --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+      }
+      .container {
+        padding: 24px 28px 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      h1 {
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+      }
+      .section {
+        background: var(--card);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .section-header {
+        padding: 10px 16px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        padding: 10px 16px;
+        gap: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .row:last-child { border-bottom: none; }
+      .row label {
+        flex: 0 0 130px;
+        font-size: 13px;
+        color: var(--text);
+      }
+      .row input[type="text"],
+      .row input[type="number"],
+      .row input[type="url"] {
+        flex: 1;
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--input-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .row input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+      }
+      .row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      .hint {
+        font-size: 11px;
+        color: var(--text-secondary);
+        padding: 4px 16px 10px;
+        line-height: 1.5;
+      }
+
+      /* Calendars */
+      #calendar-list {
+        display: flex;
+        flex-direction: column;
+      }
+      .calendar-item {
+        display: grid;
+        grid-template-columns: 1fr 2fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .calendar-item:last-child { border-bottom: none; }
+      .calendar-item input[type="text"],
+      .calendar-item input[type="url"] {
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--input-bg);
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        width: 100%;
+      }
+      .calendar-item input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+      }
+      .btn-remove {
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: none;
+        background: var(--danger);
+        color: #fff;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.15s;
+      }
+      .btn-remove:hover { opacity: 0.8; }
+      .add-row {
+        padding: 10px 16px;
+        display: flex;
+        justify-content: flex-start;
+        border-top: 1px solid var(--border);
+      }
+      .btn-add {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-add:hover { background: var(--bg); }
+      .empty-state {
+        padding: 20px 16px;
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      /* Footer buttons */
+      .footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+      }
+      .btn {
+        padding: 7px 20px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: opacity 0.15s, background 0.15s;
+        border: none;
+        outline: none;
+      }
+      .btn-secondary {
+        background: var(--card);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn-secondary:hover { opacity: 0.75; }
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-primary:hover { background: var(--accent-hover); }
+      .btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+      /* Toast */
+      #toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%) translateY(10px);
+        background: #323232;
+        color: #fff;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 13px;
+        opacity: 0;
+        transition: opacity 0.25s, transform 0.25s;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      #toast.error { background: var(--danger); }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>AuraCalendar 設定</h1>
+
+      <!-- Calendars -->
+      <div class="section">
+        <div class="section-header">カレンダー</div>
+        <div id="calendar-list"></div>
+        <div class="add-row">
+          <button class="btn-add" id="btn-add-calendar">
+            <span style="font-size:16px;line-height:1">＋</span> カレンダーを追加
+          </button>
+        </div>
+      </div>
+
+      <!-- Display -->
+      <div class="section">
+        <div class="section-header">表示形式</div>
+        <div class="row">
+          <label>通常フォーマット</label>
+          <input type="text" id="normal-format" placeholder="{minutes_until}分後 {title}" />
+        </div>
+        <div class="hint">
+          使えるプレースホルダー:
+          <code>{minutes_until}</code> 残り分,
+          <code>{hh}</code> 時間,
+          <code>{mm}</code> 分(2桁),
+          <code>{title}</code> タイトル
+        </div>
+        <div class="row">
+          <label>ステルスフォーマット</label>
+          <input type="text" id="stealth-format" placeholder="***" />
+        </div>
+        <div class="row">
+          <label>タイトルを表示</label>
+          <input type="checkbox" id="show-title" />
+        </div>
+      </div>
+
+      <!-- Refresh -->
+      <div class="section">
+        <div class="section-header">更新設定</div>
+        <div class="row">
+          <label>更新間隔（秒）</label>
+          <input type="number" id="refresh-interval" min="30" max="86400" step="30" style="max-width:120px" />
+        </div>
+        <div class="hint">最小 30 秒。変更は即座に反映されます。</div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="footer">
+        <button class="btn btn-secondary" id="btn-cancel">キャンセル</button>
+        <button class="btn btn-primary" id="btn-save">保存</button>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+
+      let originalConfig = null;
+
+      function showToast(message, isError = false) {
+        const toast = document.getElementById("toast");
+        toast.textContent = message;
+        toast.className = "show" + (isError ? " error" : "");
+        setTimeout(() => { toast.className = ""; }, 2500);
+      }
+
+      function renderCalendars(calendars) {
+        const list = document.getElementById("calendar-list");
+        list.innerHTML = "";
+
+        if (calendars.length === 0) {
+          list.innerHTML = '<div class="empty-state">カレンダーが登録されていません</div>';
+          return;
+        }
+
+        calendars.forEach((cal, i) => {
+          const item = document.createElement("div");
+          item.className = "calendar-item";
+
+          const nameInput = document.createElement("input");
+          nameInput.type = "text";
+          nameInput.placeholder = "名前";
+          nameInput.value = cal.name;
+          nameInput.dataset.index = i;
+          nameInput.dataset.field = "name";
+
+          const urlInput = document.createElement("input");
+          urlInput.type = "url";
+          urlInput.placeholder = "iCal URL (https://...)";
+          urlInput.value = cal.ical_url;
+          urlInput.dataset.index = i;
+          urlInput.dataset.field = "ical_url";
+
+          const removeBtn = document.createElement("button");
+          removeBtn.className = "btn-remove";
+          removeBtn.title = "削除";
+          removeBtn.innerHTML = "−";
+          removeBtn.dataset.index = i;
+          removeBtn.addEventListener("click", () => removeCalendar(i));
+
+          item.appendChild(nameInput);
+          item.appendChild(urlInput);
+          item.appendChild(removeBtn);
+          list.appendChild(item);
+        });
+      }
+
+      function getCalendarsFromDOM() {
+        const items = document.querySelectorAll(".calendar-item");
+        const calendars = [];
+        items.forEach(item => {
+          const nameInput = item.querySelector("input[data-field='name']");
+          const urlInput = item.querySelector("input[data-field='ical_url']");
+          if (nameInput && urlInput) {
+            calendars.push({ name: nameInput.value.trim(), ical_url: urlInput.value.trim() });
+          }
+        });
+        return calendars;
+      }
+
+      function removeCalendar(index) {
+        const calendars = getCalendarsFromDOM();
+        calendars.splice(index, 1);
+        renderCalendars(calendars);
+      }
+
+      document.getElementById("btn-add-calendar").addEventListener("click", () => {
+        const calendars = getCalendarsFromDOM();
+        calendars.push({ name: "", ical_url: "" });
+        renderCalendars(calendars);
+        const items = document.querySelectorAll(".calendar-item");
+        const last = items[items.length - 1];
+        if (last) last.querySelector("input").focus();
+      });
+
+      document.getElementById("btn-cancel").addEventListener("click", () => {
+        window.close();
+      });
+
+      document.getElementById("btn-save").addEventListener("click", async () => {
+        const calendars = getCalendarsFromDOM().filter(c => c.ical_url.length > 0);
+        const normalFormat = document.getElementById("normal-format").value.trim();
+        const stealthFormat = document.getElementById("stealth-format").value.trim();
+        const showTitle = document.getElementById("show-title").checked;
+        const refreshInterval = parseInt(document.getElementById("refresh-interval").value, 10);
+
+        if (isNaN(refreshInterval) || refreshInterval < 30) {
+          showToast("更新間隔は30秒以上にしてください", true);
+          return;
+        }
+
+        const config = {
+          calendars,
+          display: {
+            normal_format: normalFormat || "{minutes_until}分後 {title}",
+            stealth_format: stealthFormat,
+            show_title: showTitle,
+          },
+          refresh_interval_seconds: refreshInterval,
+        };
+
+        const saveBtn = document.getElementById("btn-save");
+        saveBtn.disabled = true;
+        try {
+          await invoke("save_config", { config });
+          showToast("保存しました ✓");
+        } catch (e) {
+          showToast("保存に失敗しました: " + e, true);
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+
+      async function init() {
+        try {
+          const config = await invoke("get_config");
+          originalConfig = config;
+          renderCalendars(config.calendars);
+          document.getElementById("normal-format").value = config.display.normal_format;
+          document.getElementById("stealth-format").value = config.display.stealth_format;
+          document.getElementById("show-title").checked = config.display.show_title;
+          document.getElementById("refresh-interval").value = config.refresh_interval_seconds;
+        } catch (e) {
+          showToast("設定の読み込みに失敗しました: " + e, true);
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

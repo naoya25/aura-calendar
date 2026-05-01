@@ -84,6 +84,10 @@ impl AppConfig {
         Ok(())
     }
 
+    pub fn save(&self) -> Result<(), ConfigError> {
+        self.save_to(&config_path()?)
+    }
+
     pub fn normal_title(&self) -> String {
         if self.calendars.is_empty() {
             "Aura: no calendar".to_string()

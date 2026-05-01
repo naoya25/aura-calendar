@@ -23,30 +23,10 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
     let mut best_event: Option<CalendarEvent> = None;
 
     for calendar in &config.calendars {
-        let response = match client.get(&calendar.ical_url).send().await {
-            Ok(response) => response,
-            Err(error) => {
-                if first_error.is_none() {
-                    first_error = Some(error);
-                }
-                continue;
-            }
-        };
-
-        let body = match response.error_for_status() {
-            Ok(ok_response) => match ok_response.text().await {
-                Ok(body) => body,
-                Err(error) => {
-                    if first_error.is_none() {
-                        first_error = Some(error);
-                    }
-                    continue;
-                }
-            },
-            Err(error) => {
-                if first_error.is_none() {
-                    first_error = Some(error);
-                }
+        let body = match fetch_calendar_body(&client, &calendar.ical_url).await {
+            Ok(body) => body,
+            Err(e) => {
+                first_error.get_or_insert(e);
                 continue;
             }
         };
@@ -76,6 +56,19 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
     }
 
     Ok(None)
+}
+
+async fn fetch_calendar_body(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<String, reqwest::Error> {
+    client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await
 }
 
 #[derive(Debug, Error)]
@@ -205,7 +198,10 @@ fn expand_recurring_event(
 
     let parsed_rule = match RRule::from_str(rrule).and_then(|rule| rule.validate(start_tz)) {
         Ok(rule) => rule,
-        Err(_) => return events,
+        Err(e) => {
+            eprintln!("RRULE parse failed ({rrule}): {e}");
+            return events;
+        }
     };
     let rule_set = RRuleSet::new(start_tz)
         .rrule(parsed_rule)
@@ -303,4 +299,172 @@ fn format_title(
         .replace("{title}", title_value)
         .trim()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn fixed_now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap()
+    }
+
+    fn make_ics(events: &str) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n{}END:VCALENDAR\r\n",
+            events
+        )
+    }
+
+    fn make_event(dtstart: &str, dtend: &str, summary: &str) -> String {
+        format!(
+            "BEGIN:VEVENT\r\nDTSTART:{dtstart}\r\nDTEND:{dtend}\r\nSUMMARY:{summary}\r\nEND:VEVENT\r\n"
+        )
+    }
+
+    // --- unfold_ical_lines ---
+
+    #[test]
+    fn unfold_preserves_simple_lines() {
+        let result = unfold_ical_lines("LINE1\r\nLINE2\r\n");
+        assert_eq!(result, vec!["LINE1", "LINE2"]);
+    }
+
+    #[test]
+    fn unfold_joins_line_folded_with_space() {
+        // iCal の折り返し: 次の行が空白で始まる場合は前の行の続き
+        let result = unfold_ical_lines("PROP:val\r\n ue\r\n");
+        assert_eq!(result, vec!["PROP:value"]);
+    }
+
+    #[test]
+    fn unfold_joins_line_folded_with_tab() {
+        let result = unfold_ical_lines("PROP:val\r\n\tcontinued\r\n");
+        assert_eq!(result, vec!["PROP:valcontinued"]);
+    }
+
+    // --- parse_datetime ---
+
+    #[test]
+    fn parse_datetime_utc_format() {
+        let result = parse_datetime("20260501T150000Z");
+        let expected = Utc.with_ymd_and_hms(2026, 5, 1, 15, 0, 0).unwrap();
+        assert_eq!(result, Some(expected));
+    }
+
+    #[test]
+    fn parse_datetime_local_format_returns_some() {
+        // ローカルタイムゾーン依存なので Some() であることだけ確認
+        assert!(parse_datetime("20260501T150000").is_some());
+    }
+
+    #[test]
+    fn parse_datetime_date_only_returns_some() {
+        assert!(parse_datetime("20260501").is_some());
+    }
+
+    #[test]
+    fn parse_datetime_invalid_returns_none() {
+        assert_eq!(parse_datetime("invalid"), None);
+        assert_eq!(parse_datetime(""), None);
+        assert_eq!(parse_datetime("20260501T"), None);
+    }
+
+    // --- parse_next_event ---
+
+    #[test]
+    fn parse_next_event_returns_none_for_empty_calendar() {
+        let ics = make_ics("");
+        assert!(parse_next_event(&ics, fixed_now()).is_none());
+    }
+
+    #[test]
+    fn parse_next_event_returns_future_event() {
+        let ics = make_ics(&make_event("20260501T150000Z", "20260501T160000Z", "Team Meeting"));
+        let event = parse_next_event(&ics, fixed_now()).unwrap();
+        assert_eq!(event.title, "Team Meeting");
+        assert_eq!(
+            event.start,
+            Utc.with_ymd_and_hms(2026, 5, 1, 15, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_next_event_ignores_past_event() {
+        // now = 12:00, イベントは 09:00-10:00（過去）→ 返さない
+        let ics = make_ics(&make_event("20260501T090000Z", "20260501T100000Z", "Past Event"));
+        assert!(parse_next_event(&ics, fixed_now()).is_none());
+    }
+
+    #[test]
+    fn parse_next_event_returns_currently_active_event() {
+        // now = 12:00, イベントは 11:00-13:00（進行中）→ 返す
+        let ics = make_ics(&make_event(
+            "20260501T110000Z",
+            "20260501T130000Z",
+            "Active Meeting",
+        ));
+        let event = parse_next_event(&ics, fixed_now()).unwrap();
+        assert_eq!(event.title, "Active Meeting");
+    }
+
+    #[test]
+    fn parse_next_event_returns_nearest_when_multiple() {
+        // 2つある場合は近い方を返す
+        let events = format!(
+            "{}{}",
+            make_event("20260501T160000Z", "20260501T170000Z", "Later"),
+            make_event("20260501T150000Z", "20260501T160000Z", "Earlier"),
+        );
+        let event = parse_next_event(&make_ics(&events), fixed_now()).unwrap();
+        assert_eq!(event.title, "Earlier");
+    }
+
+    #[test]
+    fn parse_next_event_defaults_empty_title_to_yotei_ari() {
+        let ics = make_ics(&make_event("20260501T150000Z", "20260501T160000Z", ""));
+        let event = parse_next_event(&ics, fixed_now()).unwrap();
+        assert_eq!(event.title, "予定あり");
+    }
+
+    #[test]
+    fn parse_next_event_handles_all_day_event() {
+        // VALUE=DATE 形式（終日イベント）
+        let ics = make_ics(
+            "BEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20260502\r\nSUMMARY:All Day\r\nEND:VEVENT\r\n",
+        );
+        let event = parse_next_event(&ics, fixed_now());
+        assert!(event.is_some());
+        assert_eq!(event.unwrap().title, "All Day");
+    }
+
+    // --- format_title ---
+
+    #[test]
+    fn format_title_90_minutes_away() {
+        // デフォルトフォーマット: "{minutes_until}分後 {title}"
+        let config = crate::config::AppConfig::default();
+        let now = fixed_now();
+        let start = now + Duration::minutes(90);
+        assert_eq!(format_title(&config, "MTG", start, now), "90分後 MTG");
+    }
+
+    #[test]
+    fn format_title_active_event_shows_zero() {
+        let config = crate::config::AppConfig::default();
+        let now = fixed_now();
+        // display_time = now なので seconds = 0 → "0分後 MTG"
+        assert_eq!(format_title(&config, "MTG", now, now), "0分後 MTG");
+    }
+
+    #[test]
+    fn format_title_hides_title_when_show_title_false() {
+        let mut config = crate::config::AppConfig::default();
+        config.display.show_title = false;
+        let now = fixed_now();
+        let start = now + Duration::minutes(30);
+        // "30分後 " → trim → "30分後"
+        assert_eq!(format_title(&config, "Secret", start, now), "30分後");
+    }
 }

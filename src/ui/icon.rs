@@ -6,14 +6,15 @@ pub fn menu_bar_icon() -> Image<'static> {
     let mut rgba = vec![0; width * height * 4];
     let center = 8.5_f32;
 
+    // sqrt を避けて距離の二乗で比較する（4.5^2=20.25, 7.5^2=56.25, 2.0^2=4.0）
     for y in 0..height {
         for x in 0..width {
             let dx = x as f32 - center;
             let dy = y as f32 - center;
-            let distance = (dx * dx + dy * dy).sqrt();
+            let dist_sq = dx * dx + dy * dy;
             let index = (y * width + x) * 4;
 
-            if (4.5..=7.5).contains(&distance) || distance <= 2.0 {
+            if (20.25..=56.25).contains(&dist_sq) || dist_sq <= 4.0 {
                 rgba[index] = 0;
                 rgba[index + 1] = 0;
                 rgba[index + 2] = 0;

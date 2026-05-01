@@ -4,7 +4,8 @@ use std::sync::{
 };
 
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::App;
+use tauri::{App, Manager};
+use tokio::sync::oneshot;
 
 use crate::config::AppConfig;
 use crate::services::calendar::fetch_next_title;
@@ -12,6 +13,9 @@ use crate::ui::icon::menu_bar_icon;
 
 const FALLBACK_NO_CALENDAR_TITLE: &str = "Aura: no calendar";
 const FALLBACK_CALENDAR_ERROR_TITLE: &str = "Aura: calendar error";
+
+/// アプリ終了時にバックグラウンドループへ停止信号を送るためのハンドル
+pub struct ShutdownHandle(pub Mutex<Option<oneshot::Sender<()>>>);
 
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create()?;
@@ -29,6 +33,10 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .lock()
         .map(|value| value.clone())
         .unwrap_or_else(|_| FALLBACK_NO_CALENDAR_TITLE.to_string());
+
+    // バックグラウンドループのキャンセルチャネルを用意し、アプリの状態として管理する
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+    app.manage(ShutdownHandle(Mutex::new(Some(cancel_tx))));
 
     TrayIconBuilder::with_id("main-tray")
         .icon(menu_bar_icon())
@@ -60,6 +68,12 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     tauri::async_runtime::spawn(async move {
+        let duration =
+            std::time::Duration::from_secs(updater_config.refresh_interval_seconds);
+
+        // cancel_rx を pin して、ループをまたいで再利用できるようにする
+        tokio::pin!(cancel_rx);
+
         loop {
             let next_title = match fetch_next_title(&updater_config).await {
                 Ok(Some(title)) => title,
@@ -82,10 +96,11 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            tokio::time::sleep(std::time::Duration::from_secs(
-                updater_config.refresh_interval_seconds,
-            ))
-            .await;
+            // スリープ中に終了信号が来たらすぐにループを抜ける
+            tokio::select! {
+                _ = &mut cancel_rx => break,
+                _ = tokio::time::sleep(duration) => {}
+            }
         }
     });
 

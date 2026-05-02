@@ -48,6 +48,7 @@ fn truncate_hw(s: &str, limit: usize, keep: usize) -> String {
 pub struct FormatContext {
     pub d: i64,
     pub h: i64,
+    pub hh: String,
     pub m: i64,
     pub mm: String,
     pub total_minutes: i64,
@@ -81,9 +82,10 @@ pub fn build_context(
 
     FormatContext {
         d,
+        hh: format!("{h:02}"),
         h,
-        m,
         mm: format!("{m:02}"),
+        m,
         total_minutes,
         title,
         active,
@@ -95,6 +97,7 @@ fn make_context(ctx: &FormatContext) -> minijinja::Value {
     context! {
         d => ctx.d,
         h => ctx.h,
+        hh => ctx.hh,
         m => ctx.m,
         mm => ctx.mm,
         total_minutes => ctx.total_minutes,
@@ -123,6 +126,7 @@ pub fn preview(template: &str) -> Result<String, String> {
         context! {
             d => 0_i64,
             h => 1_i64,
+            hh => "01",
             m => 30_i64,
             mm => "30",
             total_minutes => 90_i64,

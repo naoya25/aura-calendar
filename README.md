@@ -1,5 +1,7 @@
 # AuraCalendar
 
+<img src="icons/icon.png" alt="AuraCalendar アイコン" width="256" style="margin-bottom: 8px;" />
+
 macOS のメニューバーに次の予定をシンプルに表示するアプリです。
 
 Google カレンダーなどの iCal URL を登録するだけで、複雑な認証なしに予定を確認できます。
@@ -17,7 +19,7 @@ Google カレンダーなどの iCal URL を登録するだけで、複雑な認
 
 ## スクリーンショット
 
-> _(準備中)_
+![](docs/images/メニューバー.png)
 
 ## 動作環境
 
@@ -96,9 +98,6 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 Pull Request と `main` への push では GitHub Actions で fmt / check / clippy / test を自動実行します。
 
-## 実装予定
-
-- [ ] DMG 配布 / Apple Developer コードサイニング対応
 
 ## ライセンス
 

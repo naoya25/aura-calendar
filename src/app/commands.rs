@@ -36,6 +36,11 @@ pub fn save_config(
 }
 
 #[tauri::command]
+pub fn get_default_config() -> crate::config::AppConfig {
+    crate::config::AppConfig::default()
+}
+
+#[tauri::command]
 pub fn preview_format(template: String) -> Result<String, String> {
     crate::format::preview(&template)
 }

@@ -42,7 +42,7 @@ impl Default for AppConfig {
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
-            normal_format: "{{ total_minutes }}分後{% if title %} {{ title }}{% endif %}{% if count > 1 %} :{{ count }}{% endif %}".to_string(),
+            normal_format: "{% if d == 0 and h == 0 and m == 0 %}now{% else %}{% if d > 0 %}{{ d }}d{% endif %}{% if h > 0 %}{{ h }}h{% endif %}{% if m > 0 %}{{ m }}m{% endif %}{% endif %}|{{ title }}{% if count > 1 %} :{{ count }}{% endif %}".to_string(),
             stealth_format: "***".to_string(),
             show_title: true,
         }

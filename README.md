@@ -3,90 +3,123 @@
 <img src="icons/icon.png" alt="AuraCalendar アイコン" width="256" style="margin-bottom: 8px;" />
 
 macOS のメニューバーに次の予定をシンプルに表示するアプリです。
+Google カレンダーなどの iCal URL を登録するだけで、複雑な認証なしに予定をサッと確認できます。
 
-Google カレンダーなどの iCal URL を登録するだけで、複雑な認証なしに予定を確認できます。
+[使い方ガイドはこちら](docs/guide.md)
 
 ---
 
-## 機能
+## ✨ 機能
 
 - **メニューバー表示** — 次の予定タイトルと開始までの残り時間をメニューバーに常駐表示
 - **ステルスモード** — アイコンを左クリックするだけで予定の表示・非表示を瞬時に切り替え（背後に人が来ても安心）
 - **複数カレンダー対応** — 複数の iCal URL を登録し、最も直近の予定を自動選択
 - **繰り返し予定対応** — RRULE / EXDATE を解釈し、定例会議なども正しく表示
-- **GUI 設定画面** — トレイを右クリック → Preferences... から設定を変更可能（config.json の直接編集不要）
-- **表示フォーマット自由設定** — `{minutes_until}`, `{hh}`, `{mm}`, `{title}` などのプレースホルダーで表示内容をカスタマイズ
+- **GUI 設定画面** — トレイを右クリック → `Preferences...` から設定を変更可能（JSONの直接編集不要）
+- **表示フォーマット自由設定** — `{minutes_until}` や `{title}` などのプレースホルダーで表示内容をカスタマイズ
 
-## スクリーンショット
+## 📸 スクリーンショット
 
 ![](docs/images/メニューバー.png)
 
-## 動作環境
+---
 
-- macOS 12 Sequoia 以降
-- Apple Silicon / Intel 両対応
+## 🚀 インストール方法
 
-## インストール
+お好みに合わせて、2つの方法から選べます。
 
-現在はソースからのビルドのみ対応しています。
+### 方法1：DMGファイルからインストール（手軽に使いたい方向け）
 
-**必要なもの**
+1. [Releases ページ](https://github.com/naoya25/aura-calendar/releases) から最新の `.dmg` ファイルをダウンロードします。
+2. ダウンロードしたファイルを開き、アプリを `Applications` フォルダにドラッグ＆ドロップします。
+
+> **⚠️【初回起動時のご注意】**
+> 本アプリは未署名のため、初回起動時に「悪質なソフトウェアかどうかをAppleでは確認できないため…」という警告が出ます。以下の手順で開いてください。
+>
+> 1. アプリのアイコンを **右クリック** します。
+> 2. メニューから **「開く」** を選択します。
+> 3. もう一度警告が出ますが、**「開く」** ボタンをクリックしてください。
+>    _(※ 2回目以降は通常通り起動できます)_
+
+### 方法2：ソースコードからビルドする（エンジニア向け・警告を回避したい方向け）
+
+ご自身の環境でビルドすることで、Gatekeeperの警告を完全に回避できます。
+
+**必要な環境**
 
 - [Rust](https://www.rust-lang.org/tools/install) (stable)
-- [Tauri CLI](https://tauri.app/start/prerequisites/)
+- Node.js (npm / npx)
+- Xcode Command Line Tools
 
 ```bash
-git clone https://github.com/naoya25/aura-calendar.git
+# リポジトリをクローン
+git clone [https://github.com/naoya25/aura-calendar.git](https://github.com/naoya25/aura-calendar.git)
 cd aura-calendar
-cargo run
+
+# アプリをビルド（初回はコンパイルに時間がかかります）
+npx tauri build
 ```
 
-## 使い方
+ビルド完了後、`src-tauri/target/release/bundle/dmg/` または `macos/` 内に生成されたアプリをご利用ください。
 
-1. アプリを起動するとメニューバーにアイコンが表示されます
-2. **右クリック → Preferences...** でカレンダーの iCal URL を登録
-3. iCal URL は Google カレンダーの「設定 → カレンダーの統合 → 非公開の iCal 形式の URL」から取得できます
-4. **左クリック** で予定の表示・非表示を切り替え（ステルスモード）
-5. **右クリック → Quit AuraCalendar** で終了
+---
 
-## 設定
+## 📖 使い方
 
-設定は GUI から変更できます。設定ファイルの保存先：
+1. アプリを起動すると、メニューバーにアイコンが表示されます。
+2. アイコンを **右クリック → Preferences...** を開き、カレンダーの iCal URL を登録します。
+   _(※ iCal URL は Google カレンダーの「設定 → カレンダーの統合 → 非公開の iCal 形式の URL」から取得できます)_
+3. **左クリック** で予定の表示・非表示を切り替えられます（ステルスモード）。
+4. 終了する場合は **右クリック → Quit AuraCalendar** を選択します。
 
-```
+---
+
+## ⚙️ 設定
+
+設定は GUI から変更できますが、実体は以下のパスに保存されます。
+
+```text
 ~/Library/Application Support/AuraCalendar/config.json
 ```
 
 **設定項目**
 
-| キー                       | 説明                                          | デフォルト                    |
-| -------------------------- | --------------------------------------------- | ----------------------------- |
-| `calendars`                | カレンダー名と iCal URL のリスト              | `[]`                          |
-| `display.normal_format`    | 通常時の表示フォーマット                      | `{minutes_until}分後 {title}` |
-| `display.stealth_format`   | ステルス時の表示文字列                        | `***`                         |
-| `display.show_title`       | 予定タイトルを表示するか                      | `true`                        |
-| `refresh_interval_seconds` | カレンダー取得・表示更新の間隔（秒、最小 30） | `300`                         |
+| キー                       | 説明                             | デフォルト                    |
+| -------------------------- | -------------------------------- | ----------------------------- |
+| `calendars`                | カレンダー名と iCal URL のリスト | `[]`                          |
+| `display.normal_format`    | 通常時の表示フォーマット         | `{minutes_until}分後 {title}` |
+| `display.stealth_format`   | ステルス時の表示文字列           | `***`                         |
+| `display.show_title`       | 予定タイトルを表示するか         | `true`                        |
+| `refresh_interval_seconds` | 情報更新の間隔（秒、最小30）     | `300`                         |
 
 **フォーマットのプレースホルダー**
 
-| プレースホルダー  | 内容                     |
-| ----------------- | ------------------------ |
-| `{minutes_until}` | 開始まで何分か（合計分） |
-| `{hh}`            | 時間部分                 |
-| `{mm}`            | 分部分（2桁）            |
-| `{title}`         | 予定のタイトル           |
+| プレースホルダー  | 内容                         |
+| ----------------- | ---------------------------- |
+| `{minutes_until}` | 開始までの残り時間（合計分） |
+| `{hh}`            | 時間部分                     |
+| `{mm}`            | 分部分（2桁）                |
+| `{title}`         | 予定のタイトル               |
 
-## 技術スタック
+---
 
-- [Tauri 2](https://tauri.app/) — クロスプラットフォームデスクトップフレームワーク
-- [Rust](https://www.rust-lang.org/) — バックエンド全般
-- HTML / CSS / JavaScript — 設定画面 UI
+## 💻 開発情報
 
-## 開発
+### 動作環境
+
+- macOS 12 Monterey 以降 (Apple Silicon / Intel 両対応)
+
+### 技術スタック
+
+- **[Tauri 2](https://tauri.app/)** — クロスプラットフォームデスクトップフレームワーク
+- **[Rust](https://www.rust-lang.org/)** — バックエンド全般
+- **HTML / CSS / JavaScript** — 設定画面 UI
+
+### 開発コマンド
 
 ```bash
-# ビルド
-cargo build
+# 開発モードで起動
+npx tauri dev
 
 # テスト
 cargo test
@@ -96,9 +129,10 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-Pull Request と `main` への push では GitHub Actions で fmt / check / clippy / test を自動実行します。
+※ Pull Request および `main` への push 時には、GitHub Actions により `fmt`, `clippy`, `test` が自動実行されます。
 
+---
 
-## ライセンス
+## 📄 ライセンス
 
-MIT
+[MIT License](LICENSE)

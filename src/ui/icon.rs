@@ -1,25 +1,40 @@
 use tauri::image::Image;
 
 pub fn menu_bar_icon() -> Image<'static> {
-    let width = 18;
-    let height = 18;
-    let mut rgba = vec![0; width * height * 4];
-    let center = 8.5_f32;
+    let width: usize = 18;
+    let height: usize = 18;
+    let mut rgba = vec![0u8; width * height * 4];
 
-    // sqrt を避けて距離の二乗で比較する（4.5^2=20.25, 7.5^2=56.25, 2.0^2=4.0）
-    for y in 0..height {
-        for x in 0..width {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
-            let dist_sq = dx * dx + dy * dy;
-            let index = (y * width + x) * 4;
+    // 塗りつぶし角丸正方形: 余白 3px、角丸半径 2px
+    let pad = 3.0_f32;
+    let r = 2.0_f32;
+    let x0 = pad;
+    let y0 = pad;
+    let x1 = (width as f32) - 1.0 - pad;
+    let y1 = (height as f32) - 1.0 - pad;
 
-            if (20.25..=56.25).contains(&dist_sq) || dist_sq <= 4.0 {
-                rgba[index] = 0;
-                rgba[index + 1] = 0;
-                rgba[index + 2] = 0;
-                rgba[index + 3] = 255;
+    for row in 0..height {
+        for col in 0..width {
+            let px = col as f32 + 0.5;
+            let py = row as f32 + 0.5;
+
+            if px < x0 || px > x1 || py < y0 || py > y1 {
+                continue;
             }
+
+            // 角の領域だけ円弧でクリップ
+            let in_corner_x = px < x0 + r || px > x1 - r;
+            let in_corner_y = py < y0 + r || py > y1 - r;
+            if in_corner_x && in_corner_y {
+                let cx = if px < x0 + r { x0 + r } else { x1 - r };
+                let cy = if py < y0 + r { y0 + r } else { y1 - r };
+                if (px - cx) * (px - cx) + (py - cy) * (py - cy) > r * r {
+                    continue;
+                }
+            }
+
+            let i = (row * width + col) * 4;
+            rgba[i + 3] = 255; // 黒の不透明ピクセル（R/G/B は 0 のまま）
         }
     }
 

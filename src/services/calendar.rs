@@ -109,10 +109,16 @@ impl CalendarEvent {
 
 fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> {
     let relevant = collect_relevant_events(ics, now);
-    let min_dt = relevant.iter().map(|e| e.display_time(now)).min();
+
+    // 未開始の予定を優先し、なければ進行中の予定を使う。
+    // 長い予定の中に別の予定が入っている場合に次の予定を常に表示するため。
+    let (future, active): (Vec<_>, Vec<_>) = relevant.into_iter().partition(|e| e.start > now);
+    let candidates = if !future.is_empty() { future } else { active };
+
+    let min_dt = candidates.iter().map(|e| e.display_time(now)).min();
     match min_dt {
         None => vec![],
-        Some(dt) => relevant
+        Some(dt) => candidates
             .into_iter()
             .filter(|e| e.display_time(now) == dt)
             .collect(),
@@ -572,13 +578,23 @@ mod tests {
     // --- parse_concurrent_events ---
 
     #[test]
-    fn concurrent_events_active_and_future_are_not_grouped() {
-        // 終日MTG（進行中）と短いMTG（将来）は別グループ → 進行中の終日MTGのみ返す
+    fn concurrent_events_future_preferred_over_active() {
+        // 長い予定（進行中）の中に別の予定（将来）がある → 将来の予定を優先して返す
         let events = format!(
             "{}{}",
             make_event("20260501T090000Z", "20260501T180000Z", "終日MTG"),
             make_event("20260501T140000Z", "20260501T143000Z", "短いMTG"),
         );
+        let now = fixed_now(); // 12:00 UTC
+        let concurrent = parse_concurrent_events(&make_ics(&events), now);
+        assert_eq!(concurrent.len(), 1);
+        assert_eq!(concurrent[0].title, "短いMTG");
+    }
+
+    #[test]
+    fn concurrent_events_active_shown_when_no_future() {
+        // 将来の予定がない場合は進行中の予定を表示する
+        let events = make_event("20260501T090000Z", "20260501T180000Z", "終日MTG");
         let now = fixed_now(); // 12:00 UTC
         let concurrent = parse_concurrent_events(&make_ics(&events), now);
         assert_eq!(concurrent.len(), 1);

@@ -99,6 +99,7 @@ Pull Request と `main` への push では GitHub Actions で fmt / check / clip
 ## 実装予定
 
 - [ ] 表示更新とカレンダー取得の間隔を分離（表示は短周期、取得は長周期）
+- [ ] 右クリック時に予定一覧表示
 - [ ] DMG 配布 / Apple Developer コードサイニング対応
 
 ## ライセンス

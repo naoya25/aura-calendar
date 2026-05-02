@@ -35,6 +35,11 @@ pub fn save_config(
     Ok(())
 }
 
+#[tauri::command]
+pub fn preview_format(template: String) -> Result<String, String> {
+    crate::format::preview(&template)
+}
+
 pub fn open_settings_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();

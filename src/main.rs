@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod format;
 mod services;
 mod ui;
 

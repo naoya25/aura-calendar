@@ -250,17 +250,33 @@
       <!-- Display -->
       <div class="section">
         <div class="section-header">表示形式</div>
-        <div class="row">
-          <label>通常フォーマット</label>
-          <input type="text" id="normal-format" placeholder="{minutes_until}分後 {title}" />
+
+        <!-- 通常フォーマット -->
+        <div style="padding: 10px 16px; display:flex; flex-direction:column; gap:6px; border-bottom: 1px solid var(--border);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <span style="font-size:13px;">通常フォーマット</span>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-secondary" id="btn-reset-format" style="padding:3px 10px; font-size:12px;">デフォルトに戻す</button>
+              <button class="btn btn-secondary" id="btn-preview" style="padding:3px 10px; font-size:12px;">プレビュー</button>
+            </div>
+          </div>
+          <input type="text" id="normal-format" style="width:100%; box-sizing:border-box;" />
+          <div id="preview-result" style="font-size:12px; color:var(--text-secondary); min-height:16px;"></div>
         </div>
         <div class="hint">
-          使えるプレースホルダー:
-          <code>{minutes_until}</code> 残り分,
-          <code>{hh}</code> 時間,
-          <code>{mm}</code> 分(2桁),
-          <code>{title}</code> タイトル
+          <strong>Jinja2 テンプレート構文が使えます</strong><br>
+          <code>&#123;&#123; total_minutes &#125;&#125;</code> 残り合計分 &nbsp;
+          <code>&#123;&#123; d &#125;&#125;</code> 日 &nbsp;
+          <code>&#123;&#123; h &#125;&#125;</code> 時間(0-23) &nbsp;
+          <code>&#123;&#123; m &#125;&#125;</code> 分(0-59) &nbsp;
+          <code>&#123;&#123; mm &#125;&#125;</code> 分(2桁) &nbsp;
+          <code>&#123;&#123; title &#125;&#125;</code> タイトル &nbsp;
+          <code>&#123;&#123; active &#125;&#125;</code> 進行中(bool) &nbsp;
+          <code>&#123;&#123; count &#125;&#125;</code> 同時予定数<br>
+          <span style="margin-top:4px; display:block;">例: <code>&#123;% if d > 0 %&#125;&#123;&#123; d &#125;&#125;日&#123;% endif %&#125;&#123;% if h > 0 %&#125;&#123;&#123; h &#125;&#125;時間&#123;% endif %&#125;&#123;&#123; m &#125;&#125;分後 &#123;&#123; title &#125;&#125;</code></span>
+          <span>例: <code>&#123;% if active %&#125;進行中&#123;% else %&#125;&#123;&#123; total_minutes &#125;&#125;分後&#123;% endif %&#125; &#123;&#123; title &#125;&#125;</code></span>
         </div>
+
         <div class="row">
           <label>ステルスフォーマット</label>
           <input type="text" id="stealth-format" placeholder="***" />
@@ -292,6 +308,13 @@
 
     <script>
       const { invoke } = window.__TAURI__.core;
+
+      const DEFAULTS = {
+        normal_format: "{{ total_minutes }}分後{% if title %} {{ title }}{% endif %}{% if count > 1 %} :{{ count }}{% endif %}",
+        stealth_format: "***",
+        show_title: true,
+        refresh_interval_seconds: 300,
+      };
 
       let originalConfig = null;
 
@@ -371,6 +394,24 @@
         if (last) last.querySelector("input").focus();
       });
 
+      document.getElementById("btn-reset-format").addEventListener("click", () => {
+        document.getElementById("normal-format").value = DEFAULTS.normal_format;
+        document.getElementById("preview-result").textContent = "";
+      });
+
+      document.getElementById("btn-preview").addEventListener("click", async () => {
+        const template = document.getElementById("normal-format").value;
+        const resultEl = document.getElementById("preview-result");
+        try {
+          const rendered = await invoke("preview_format", { template });
+          resultEl.style.color = "var(--text-secondary)";
+          resultEl.textContent = "→ " + rendered;
+        } catch (e) {
+          resultEl.style.color = "var(--danger)";
+          resultEl.textContent = "エラー: " + e;
+        }
+      });
+
       document.getElementById("btn-cancel").addEventListener("click", () => {
         window.close();
       });
@@ -390,7 +431,7 @@
         const config = {
           calendars,
           display: {
-            normal_format: normalFormat || "{minutes_until}分後 {title}",
+            normal_format: normalFormat || DEFAULTS.normal_format,
             stealth_format: stealthFormat,
             show_title: showTitle,
           },

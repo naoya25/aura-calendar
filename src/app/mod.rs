@@ -8,6 +8,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
+            commands::preview_format,
         ])
         .setup(tray::setup)
         .build(tauri::generate_context!())

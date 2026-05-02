@@ -20,7 +20,8 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
         .build()?;
     let now = Utc::now();
     let mut first_error: Option<reqwest::Error> = None;
-    let mut best_event: Option<CalendarEvent> = None;
+    let mut best_display_time: Option<DateTime<Utc>> = None;
+    let mut best_events: Vec<CalendarEvent> = Vec::new();
 
     for calendar in &config.calendars {
         let body = match fetch_calendar_body(&client, &calendar.ical_url).await {
@@ -31,24 +32,30 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
             }
         };
 
-        if let Some(event) = parse_next_event(&body, now) {
-            let should_replace = match &best_event {
-                Some(existing) => event.display_time(now) < existing.display_time(now),
-                None => true,
-            };
-            if should_replace {
-                best_event = Some(event);
+        let concurrent = parse_concurrent_events(&body, now);
+        if concurrent.is_empty() {
+            continue;
+        }
+
+        let dt = concurrent[0].display_time(now);
+        match best_display_time {
+            None => {
+                best_display_time = Some(dt);
+                best_events = concurrent;
             }
+            Some(best_dt) if dt < best_dt => {
+                best_display_time = Some(dt);
+                best_events = concurrent;
+            }
+            Some(best_dt) if dt == best_dt => {
+                best_events.extend(concurrent);
+            }
+            _ => {}
         }
     }
 
-    if let Some(event) = best_event {
-        return Ok(Some(format_title(
-            config,
-            &event.title,
-            event.display_time(now),
-            now,
-        )));
+    if !best_events.is_empty() {
+        return Ok(Some(format_title_group(config, &best_events, now)));
     }
 
     if let Some(error) = first_error {
@@ -100,7 +107,24 @@ impl CalendarEvent {
     }
 }
 
+fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> {
+    let relevant = collect_relevant_events(ics, now);
+    let min_dt = relevant.iter().map(|e| e.display_time(now)).min();
+    match min_dt {
+        None => vec![],
+        Some(dt) => relevant
+            .into_iter()
+            .filter(|e| e.display_time(now) == dt)
+            .collect(),
+    }
+}
+
+#[cfg(test)]
 fn parse_next_event(ics: &str, now: DateTime<Utc>) -> Option<CalendarEvent> {
+    parse_concurrent_events(ics, now).into_iter().next()
+}
+
+fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> {
     let mut current_start: Option<DateTime<Utc>> = None;
     let mut current_end: Option<DateTime<Utc>> = None;
     let mut current_is_all_day = false;
@@ -179,7 +203,7 @@ fn parse_next_event(ics: &str, now: DateTime<Utc>) -> Option<CalendarEvent> {
     events
         .into_iter()
         .filter(|event| event.start >= now || event.is_active_at(now))
-        .min_by_key(|event| event.display_time(now))
+        .collect()
 }
 
 fn expand_recurring_event(
@@ -196,7 +220,12 @@ fn expand_recurring_event(
     let base_duration = end.map(|end_at| end_at - start);
     let mut events = Vec::new();
 
-    let parsed_rule = match RRule::from_str(rrule).and_then(|rule| rule.validate(start_tz)) {
+    let normalized_rrule = normalize_rrule_until(rrule);
+    // UNTIL < DTSTART はカレンダー側のデータ不整合。既に終了済みなので静かにスキップする。
+    if rrule_until_before_start(&normalized_rrule, start) {
+        return events;
+    }
+    let parsed_rule = match RRule::from_str(&normalized_rrule).and_then(|rule| rule.validate(start_tz)) {
         Ok(rule) => rule,
         Err(e) => {
             eprintln!("RRULE parse failed ({rrule}): {e}");
@@ -222,6 +251,44 @@ fn expand_recurring_event(
     }
 
     events
+}
+
+/// UNTIL が DTSTART より前かどうかを確認する。
+/// 正規化済み RRULE（UNTIL は UTC 形式）を前提とする。
+fn rrule_until_before_start(rrule: &str, start: DateTime<Utc>) -> bool {
+    const PREFIX: &str = "UNTIL=";
+    let Some(pos) = rrule.find(PREFIX) else { return false };
+    let value = &rrule[pos + PREFIX.len()..];
+    let end = value.find(';').unwrap_or(value.len());
+    let until_str = &value[..end];
+    NaiveDateTime::parse_from_str(until_str, "%Y%m%dT%H%M%SZ")
+        .map(|naive| DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc) < start)
+        .unwrap_or(false)
+}
+
+/// `UNTIL=YYYYMMDD`（日付のみ）を `UNTIL=YYYYMMDDTXXXXXXZ`（UTC）に正規化する。
+/// Google カレンダーなどが UTC の DTSTART と日付のみの UNTIL を組み合わせた
+/// RFC 違反の RRULE を出力することがあるため、パース前に補正する。
+fn normalize_rrule_until(rrule: &str) -> String {
+    const PREFIX: &str = "UNTIL=";
+    let Some(until_pos) = rrule.find(PREFIX) else {
+        return rrule.to_string();
+    };
+    let value_start = until_pos + PREFIX.len();
+    let value = &rrule[value_start..];
+
+    // 日付のみ形式: 8桁の数字の後が ';'・末尾・スペースのどれか
+    let is_date_only = value.len() >= 8
+        && value[..8].chars().all(|c| c.is_ascii_digit())
+        && matches!(value.as_bytes().get(8), None | Some(b';') | Some(b' '));
+
+    if !is_date_only {
+        return rrule.to_string();
+    }
+
+    let date = &value[..8];
+    let rest = &value[8..];
+    format!("{}{}{}T235959Z{}", &rrule[..until_pos], PREFIX, date, rest)
 }
 
 fn to_tz_datetime(value: DateTime<Utc>) -> chrono::DateTime<Tz> {
@@ -274,31 +341,33 @@ fn parse_datetime(value: &str) -> Option<DateTime<Utc>> {
     None
 }
 
+fn format_title_group(config: &AppConfig, events: &[CalendarEvent], now: DateTime<Utc>) -> String {
+    if events.len() == 1 {
+        let e = &events[0];
+        return format_title(config, &e.title, e.display_time(now), now);
+    }
+
+    let display_time = events[0].display_time(now);
+    let active = display_time == now;
+    let title = if config.display.show_title {
+        events.iter().map(|e| e.title.as_str()).collect::<Vec<_>>().join(", ")
+    } else {
+        String::new()
+    };
+    let ctx = crate::format::build_context(title, display_time, now, active, events.len());
+    crate::format::render(&config.display.normal_format, ctx)
+}
+
 fn format_title(
     config: &AppConfig,
     title: &str,
-    start: DateTime<Utc>,
+    display_time: DateTime<Utc>,
     now: DateTime<Utc>,
 ) -> String {
-    let seconds = (start - now).num_seconds().max(0);
-    let minutes_until = (seconds + 59) / 60;
-    let hours_until = minutes_until / 60;
-    let remaining_minutes = minutes_until % 60;
     let title_value = if config.display.show_title { title } else { "" };
-    let relative_time = format!("{hours_until}h{remaining_minutes:02}m");
-
-    config
-        .display
-        .normal_format
-        .replace("{relative_time}", &relative_time)
-        .replace("{hh}", &hours_until.to_string())
-        .replace("{mm}", &format!("{remaining_minutes:02}"))
-        .replace("{h}", &hours_until.to_string())
-        .replace("{m}", &remaining_minutes.to_string())
-        .replace("{minutes_until}", &minutes_until.to_string())
-        .replace("{title}", title_value)
-        .trim()
-        .to_string()
+    let active = display_time == now;
+    let ctx = crate::format::build_context(title_value.to_string(), display_time, now, active, 1);
+    crate::format::render(&config.display.normal_format, ctx)
 }
 
 #[cfg(test)]
@@ -342,6 +411,32 @@ mod tests {
     fn unfold_joins_line_folded_with_tab() {
         let result = unfold_ical_lines("PROP:val\r\n\tcontinued\r\n");
         assert_eq!(result, vec!["PROP:valcontinued"]);
+    }
+
+    // --- normalize_rrule_until ---
+
+    #[test]
+    fn normalize_rrule_until_converts_date_only() {
+        let input = "FREQ=WEEKLY;UNTIL=20211128";
+        assert_eq!(normalize_rrule_until(input), "FREQ=WEEKLY;UNTIL=20211128T235959Z");
+    }
+
+    #[test]
+    fn normalize_rrule_until_converts_date_only_with_trailing_params() {
+        let input = "FREQ=MONTHLY;UNTIL=20230614;BYMONTHDAY=15";
+        assert_eq!(normalize_rrule_until(input), "FREQ=MONTHLY;UNTIL=20230614T235959Z;BYMONTHDAY=15");
+    }
+
+    #[test]
+    fn normalize_rrule_until_leaves_utc_datetime_unchanged() {
+        let input = "FREQ=WEEKLY;UNTIL=20211227T145959Z";
+        assert_eq!(normalize_rrule_until(input), input);
+    }
+
+    #[test]
+    fn normalize_rrule_until_leaves_no_until_unchanged() {
+        let input = "FREQ=DAILY;COUNT=10";
+        assert_eq!(normalize_rrule_until(input), input);
     }
 
     // --- parse_datetime ---
@@ -466,5 +561,89 @@ mod tests {
         let start = now + Duration::minutes(30);
         // "30分後 " → trim → "30分後"
         assert_eq!(format_title(&config, "Secret", start, now), "30分後");
+    }
+
+    // --- parse_concurrent_events ---
+
+    #[test]
+    fn concurrent_events_active_and_future_are_not_grouped() {
+        // 終日MTG（進行中）と短いMTG（将来）は別グループ → 進行中の終日MTGのみ返す
+        let events = format!(
+            "{}{}",
+            make_event("20260501T090000Z", "20260501T180000Z", "終日MTG"),
+            make_event("20260501T140000Z", "20260501T143000Z", "短いMTG"),
+        );
+        let now = fixed_now(); // 12:00 UTC
+        let concurrent = parse_concurrent_events(&make_ics(&events), now);
+        assert_eq!(concurrent.len(), 1);
+        assert_eq!(concurrent[0].title, "終日MTG");
+    }
+
+    #[test]
+    fn concurrent_events_same_start_time_are_grouped() {
+        // 同時刻に始まる2つの将来予定はグループ化される
+        let events = format!(
+            "{}{}",
+            make_event("20260501T150000Z", "20260501T160000Z", "MTG-A"),
+            make_event("20260501T150000Z", "20260501T153000Z", "MTG-B"),
+        );
+        let now = fixed_now(); // 12:00 UTC
+        let concurrent = parse_concurrent_events(&make_ics(&events), now);
+        assert_eq!(concurrent.len(), 2);
+    }
+
+    #[test]
+    fn concurrent_events_multiple_active_are_grouped() {
+        // 両方進行中（display_time = now）→ グループ化される
+        let events = format!(
+            "{}{}",
+            make_event("20260501T110000Z", "20260501T130000Z", "長いMTG"),
+            make_event("20260501T113000Z", "20260501T120000Z", "短いMTG"), // 11:30-12:00, now=12:00 → 終了直前で進行中
+        );
+        let now = Utc.with_ymd_and_hms(2026, 5, 1, 11, 45, 0).unwrap();
+        let concurrent = parse_concurrent_events(&make_ics(&events), now);
+        assert_eq!(concurrent.len(), 2);
+    }
+
+    // --- format_title_group ---
+
+    #[test]
+    fn format_title_group_single_event_uses_normal_format() {
+        let config = crate::config::AppConfig::default();
+        let now = fixed_now();
+        let events = vec![CalendarEvent {
+            start: now + Duration::minutes(30),
+            end: Some(now + Duration::minutes(60)),
+            title: "MTG".to_string(),
+        }];
+        let result = format_title_group(&config, &events, now);
+        assert_eq!(result, "30分後 MTG");
+    }
+
+    #[test]
+    fn format_title_group_multiple_future_events_shows_count() {
+        let config = crate::config::AppConfig::default();
+        let now = fixed_now();
+        let start = now + Duration::minutes(15);
+        let events = vec![
+            CalendarEvent { start, end: Some(start + Duration::hours(1)), title: "MTG-A".to_string() },
+            CalendarEvent { start, end: Some(start + Duration::minutes(30)), title: "MTG-B".to_string() },
+        ];
+        let result = format_title_group(&config, &events, now);
+        assert_eq!(result, "15分後 MTG-A, MTG-B :2");
+    }
+
+    #[test]
+    fn format_title_group_multiple_active_events_shows_zero_minutes() {
+        // 進行中イベントは total_minutes=0。デフォルト形式では "0分後 ..." と表示される。
+        // "{% if not active %}" 等で制御したい場合はユーザーがテンプレートをカスタマイズする。
+        let config = crate::config::AppConfig::default();
+        let now = fixed_now();
+        let events = vec![
+            CalendarEvent { start: now - Duration::hours(1), end: Some(now + Duration::hours(1)), title: "終日MTG".to_string() },
+            CalendarEvent { start: now - Duration::minutes(10), end: Some(now + Duration::minutes(20)), title: "朝会".to_string() },
+        ];
+        let result = format_title_group(&config, &events, now);
+        assert_eq!(result, "0分後 終日MTG, 朝会 :2");
     }
 }

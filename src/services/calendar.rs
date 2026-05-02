@@ -17,7 +17,10 @@ pub struct FetchResult {
 /// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと3日分の全予定を返す（長周期で呼ぶ）。
 pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
     if config.calendars.is_empty() {
-        return Ok(FetchResult { tray_events: None, schedule_events: Vec::new() });
+        return Ok(FetchResult {
+            tray_events: None,
+            schedule_events: Vec::new(),
+        });
     }
 
     let client = reqwest::Client::builder()
@@ -69,21 +72,26 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
     all_schedule.sort_by_key(|e| e.start);
 
     if !best_events.is_empty() {
-        return Ok(FetchResult { tray_events: Some(best_events), schedule_events: all_schedule });
+        return Ok(FetchResult {
+            tray_events: Some(best_events),
+            schedule_events: all_schedule,
+        });
     }
 
     if let Some(error) = first_error {
         return Err(CalendarError::Request(error));
     }
 
-    Ok(FetchResult { tray_events: None, schedule_events: all_schedule })
+    Ok(FetchResult {
+        tray_events: None,
+        schedule_events: all_schedule,
+    })
 }
 
 /// キャッシュ済みイベントと現在時刻からタイトルを生成する（短周期で呼ぶ、IO なし）。
 pub fn render_title(config: &AppConfig, events: &[CachedEvent], now: DateTime<Utc>) -> String {
     format_title_group(config, events, now)
 }
-
 
 async fn fetch_calendar_body(
     client: &reqwest::Client,
@@ -251,13 +259,14 @@ fn expand_recurring_event(
     if rrule_until_before_start(&normalized_rrule, start) {
         return events;
     }
-    let parsed_rule = match RRule::from_str(&normalized_rrule).and_then(|rule| rule.validate(start_tz)) {
-        Ok(rule) => rule,
-        Err(e) => {
-            eprintln!("RRULE parse failed ({rrule}): {e}");
-            return events;
-        }
-    };
+    let parsed_rule =
+        match RRule::from_str(&normalized_rrule).and_then(|rule| rule.validate(start_tz)) {
+            Ok(rule) => rule,
+            Err(e) => {
+                eprintln!("RRULE parse failed ({rrule}): {e}");
+                return events;
+            }
+        };
     let rule_set = RRuleSet::new(start_tz)
         .rrule(parsed_rule)
         .set_exdates(exdates.iter().copied().map(to_tz_datetime).collect())
@@ -283,7 +292,9 @@ fn expand_recurring_event(
 /// 正規化済み RRULE（UNTIL は UTC 形式）を前提とする。
 fn rrule_until_before_start(rrule: &str, start: DateTime<Utc>) -> bool {
     const PREFIX: &str = "UNTIL=";
-    let Some(pos) = rrule.find(PREFIX) else { return false };
+    let Some(pos) = rrule.find(PREFIX) else {
+        return false;
+    };
     let value = &rrule[pos + PREFIX.len()..];
     let end = value.find(';').unwrap_or(value.len());
     let until_str = &value[..end];
@@ -452,13 +463,19 @@ mod tests {
     #[test]
     fn normalize_rrule_until_converts_date_only() {
         let input = "FREQ=WEEKLY;UNTIL=20211128";
-        assert_eq!(normalize_rrule_until(input), "FREQ=WEEKLY;UNTIL=20211128T235959Z");
+        assert_eq!(
+            normalize_rrule_until(input),
+            "FREQ=WEEKLY;UNTIL=20211128T235959Z"
+        );
     }
 
     #[test]
     fn normalize_rrule_until_converts_date_only_with_trailing_params() {
         let input = "FREQ=MONTHLY;UNTIL=20230614;BYMONTHDAY=15";
-        assert_eq!(normalize_rrule_until(input), "FREQ=MONTHLY;UNTIL=20230614T235959Z;BYMONTHDAY=15");
+        assert_eq!(
+            normalize_rrule_until(input),
+            "FREQ=MONTHLY;UNTIL=20230614T235959Z;BYMONTHDAY=15"
+        );
     }
 
     #[test]
@@ -510,7 +527,11 @@ mod tests {
 
     #[test]
     fn parse_next_event_returns_future_event() {
-        let ics = make_ics(&make_event("20260501T150000Z", "20260501T160000Z", "Team Meeting"));
+        let ics = make_ics(&make_event(
+            "20260501T150000Z",
+            "20260501T160000Z",
+            "Team Meeting",
+        ));
         let event = parse_next_event(&ics, fixed_now()).unwrap();
         assert_eq!(event.title, "Team Meeting");
         assert_eq!(
@@ -522,7 +543,11 @@ mod tests {
     #[test]
     fn parse_next_event_ignores_past_event() {
         // now = 12:00, イベントは 09:00-10:00（過去）→ 返さない
-        let ics = make_ics(&make_event("20260501T090000Z", "20260501T100000Z", "Past Event"));
+        let ics = make_ics(&make_event(
+            "20260501T090000Z",
+            "20260501T100000Z",
+            "Past Event",
+        ));
         assert!(parse_next_event(&ics, fixed_now()).is_none());
     }
 
@@ -668,8 +693,16 @@ mod tests {
         let now = fixed_now();
         let start = now + Duration::minutes(15);
         let events = vec![
-            CachedEvent { start, end: Some(start + Duration::hours(1)), title: "MTG-A".to_string() },
-            CachedEvent { start, end: Some(start + Duration::minutes(30)), title: "MTG-B".to_string() },
+            CachedEvent {
+                start,
+                end: Some(start + Duration::hours(1)),
+                title: "MTG-A".to_string(),
+            },
+            CachedEvent {
+                start,
+                end: Some(start + Duration::minutes(30)),
+                title: "MTG-B".to_string(),
+            },
         ];
         let result = format_title_group(&config, &events, now);
         // 各タイトルを個別に切り詰め: "MTG-A"(5)≤9, "MTG-B"(5)≤9 → そのまま結合
@@ -681,8 +714,16 @@ mod tests {
         let config = crate::config::AppConfig::default();
         let now = fixed_now();
         let events = vec![
-            CachedEvent { start: now - Duration::hours(1), end: Some(now + Duration::hours(1)), title: "終日MTG".to_string() },
-            CachedEvent { start: now - Duration::minutes(10), end: Some(now + Duration::minutes(20)), title: "朝会".to_string() },
+            CachedEvent {
+                start: now - Duration::hours(1),
+                end: Some(now + Duration::hours(1)),
+                title: "終日MTG".to_string(),
+            },
+            CachedEvent {
+                start: now - Duration::minutes(10),
+                end: Some(now + Duration::minutes(20)),
+                title: "朝会".to_string(),
+            },
         ];
         let result = format_title_group(&config, &events, now);
         // 各タイトルを個別に切り詰め: "終日MTG"(7)≤9, "朝会"(4)≤9 → そのまま結合

@@ -11,11 +11,7 @@ pub struct RefreshSignal(pub Arc<Notify>);
 
 #[tauri::command]
 pub fn get_config(state: tauri::State<ConfigState>) -> Result<AppConfig, String> {
-    state
-        .0
-        .read()
-        .map_err(|e| e.to_string())
-        .map(|g| g.clone())
+    state.0.read().map_err(|e| e.to_string()).map(|g| g.clone())
 }
 
 #[tauri::command]

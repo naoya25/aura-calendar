@@ -521,6 +521,57 @@
 
       /* Number input width */
       input[type="number"] { max-width: 120px; }
+
+      /* ─── Shortcut recorder ─── */
+      .shortcut-recorder {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border: 1.5px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--input-bg);
+        cursor: pointer;
+        user-select: none;
+        flex: 1;
+        min-height: 32px;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        outline: none;
+      }
+      .shortcut-recorder:hover { border-color: var(--accent); }
+      .shortcut-recorder.recording {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
+        cursor: default;
+      }
+      .shortcut-keys { display: flex; align-items: center; gap: 3px; flex: 1; }
+      .shortcut-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1px 6px;
+        background: var(--surface-secondary);
+        border: 1px solid var(--border-strong);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        min-width: 22px;
+        text-align: center;
+      }
+      .shortcut-hint {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      .shortcut-recording-text {
+        font-size: 12px;
+        color: var(--accent);
+        animation: blink 1.2s ease-in-out infinite;
+      }
     </style>
   </head>
   <body>
@@ -591,6 +642,15 @@
           <input type="text" id="stealth-format" placeholder="***" />
         </div>
 
+        <!-- Stealth shortcut -->
+        <div class="row">
+          <span class="row-label">ステルス切替キー</span>
+          <div class="shortcut-recorder" id="stealth-shortcut" tabindex="0" role="button">
+            <div class="shortcut-keys" id="stealth-shortcut-keys"></div>
+            <span class="shortcut-hint" id="stealth-shortcut-hint">クリックして変更</span>
+          </div>
+        </div>
+
         <!-- Show title -->
         <div class="row">
           <span class="row-label">タイトルを表示</span>
@@ -633,6 +693,85 @@
       const { invoke } = window.__TAURI__.core;
 
       let DEFAULTS = null;
+      let stealthShortcutValue = "ctrl+a";
+
+      function shortcutToChips(shortcut) {
+        return shortcut.toLowerCase().split("+").map(part => {
+          const label = { ctrl: "⌃", cmd: "⌘", alt: "⌥", shift: "⇧" }[part]
+            ?? (/^f\d+$/.test(part) ? part.toUpperCase() : part.toUpperCase());
+          return `<span class="shortcut-key">${label}</span>`;
+        }).join("");
+      }
+
+      function renderShortcut(shortcut) {
+        document.getElementById("stealth-shortcut-keys").innerHTML = shortcutToChips(shortcut);
+      }
+
+      function keyEventToShortcut(event) {
+        const modifiers = [];
+        if (event.ctrlKey)  modifiers.push("ctrl");
+        if (event.metaKey)  modifiers.push("cmd");
+        if (event.altKey)   modifiers.push("alt");
+        if (event.shiftKey) modifiers.push("shift");
+
+        const key = event.key;
+        if (["Control", "Meta", "Alt", "Shift"].includes(key)) return null;
+        if (key === "Escape") return "CANCEL";
+        if (modifiers.length === 0) return null;
+
+        let normalizedKey;
+        if (key === " ") normalizedKey = "space";
+        else if (key.length === 1) normalizedKey = key.toLowerCase();
+        else if (/^F\d+$/.test(key)) normalizedKey = key.toLowerCase();
+        else {
+          const keyMap = {
+            Enter: "enter", Backspace: "backspace", Delete: "delete",
+            Tab: "tab", Home: "home", End: "end",
+            PageUp: "pageup", PageDown: "pagedown",
+            ArrowUp: "arrowup", ArrowDown: "arrowdown",
+            ArrowLeft: "arrowleft", ArrowRight: "arrowright",
+          };
+          normalizedKey = keyMap[key] ?? null;
+        }
+        if (!normalizedKey) return null;
+        return [...modifiers, normalizedKey].join("+");
+      }
+
+      (function setupShortcutRecorder() {
+        const recorder = document.getElementById("stealth-shortcut");
+        const hint = document.getElementById("stealth-shortcut-hint");
+        const keys = document.getElementById("stealth-shortcut-keys");
+
+        function startRecording() {
+          recorder.classList.add("recording");
+          hint.textContent = "Esc でキャンセル";
+          keys.innerHTML = '<span class="shortcut-recording-text">キーを押してください…</span>';
+        }
+
+        function stopRecording(newShortcut) {
+          recorder.classList.remove("recording");
+          hint.textContent = "クリックして変更";
+          if (newShortcut) stealthShortcutValue = newShortcut;
+          renderShortcut(stealthShortcutValue);
+        }
+
+        recorder.addEventListener("click", () => {
+          if (!recorder.classList.contains("recording")) startRecording();
+        });
+
+        recorder.addEventListener("keydown", event => {
+          if (!recorder.classList.contains("recording")) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const shortcut = keyEventToShortcut(event);
+          if (shortcut === "CANCEL") stopRecording(null);
+          else if (shortcut) stopRecording(shortcut);
+        });
+
+        recorder.addEventListener("blur", () => {
+          if (recorder.classList.contains("recording")) stopRecording(null);
+        });
+      })();
 
       function showToast(message, isError = false) {
         const toast = document.getElementById("toast");
@@ -743,6 +882,7 @@
             show_title: showTitle,
           },
           refresh_interval_seconds: refreshInterval,
+          stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
         };
 
         const saveBtn = document.getElementById("btn-save");
@@ -766,6 +906,8 @@
           document.getElementById("stealth-format").value = config.display.stealth_format;
           document.getElementById("show-title").checked = config.display.show_title;
           document.getElementById("refresh-interval").value = config.refresh_interval_seconds;
+          stealthShortcutValue = config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
+          renderShortcut(stealthShortcutValue);
         } catch (e) {
           showToast("設定の読み込みに失敗しました: " + e, true);
         }

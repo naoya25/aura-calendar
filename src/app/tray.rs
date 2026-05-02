@@ -6,6 +6,7 @@ use std::sync::{
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, Manager};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::oneshot;
 
 use crate::config::AppConfig;
@@ -19,6 +20,49 @@ const FALLBACK_CALENDAR_ERROR_TITLE: &str = "Aura: calendar error";
 
 pub struct ShutdownHandle(pub Mutex<Option<oneshot::Sender<()>>>);
 
+pub struct StealthState {
+    pub is_hidden: Arc<AtomicBool>,
+    pub normal_title: Arc<Mutex<String>>,
+}
+
+pub fn toggle_stealth(app: &tauri::AppHandle) {
+    let stealth = app.state::<StealthState>();
+    let config = app.state::<ConfigState>();
+
+    let next_hidden = !stealth.is_hidden.fetch_xor(true, Ordering::Relaxed);
+    let title = if next_hidden {
+        config
+            .0
+            .read()
+            .map(|g| g.stealth_title().to_string())
+            .unwrap_or_else(|_| "***".to_string())
+    } else {
+        stealth
+            .normal_title
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_else(|_| FALLBACK_CALENDAR_ERROR_TITLE.to_string())
+    };
+
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Err(e) = tray.set_title(Some(title.as_str())) {
+            eprintln!("failed to update tray title: {e}");
+        }
+    }
+}
+
+pub fn register_stealth_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|e| e.to_string())
+}
+
+pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
+    if let Err(e) = app.global_shortcut().unregister_all() {
+        eprintln!("failed to unregister shortcuts: {e}");
+    }
+}
+
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create()?;
     let config_arc = Arc::new(RwLock::new(config.clone()));
@@ -28,12 +72,14 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let refresh_notify = Arc::new(tokio::sync::Notify::new());
     app.manage(RefreshSignal(Arc::clone(&refresh_notify)));
 
-    let normal_title = Arc::new(Mutex::new(config.normal_title()));
     let is_hidden = Arc::new(AtomicBool::new(false));
+    let normal_title = Arc::new(Mutex::new(config.normal_title()));
 
-    let toggle_state = Arc::clone(&is_hidden);
-    let click_config = Arc::clone(&config_arc);
-    let click_normal_title = Arc::clone(&normal_title);
+    app.manage(StealthState {
+        is_hidden: Arc::clone(&is_hidden),
+        normal_title: Arc::clone(&normal_title),
+    });
+
     let updater_hidden = Arc::clone(&is_hidden);
     let updater_title = Arc::clone(&normal_title);
     let updater_config = Arc::clone(&config_arc);
@@ -55,13 +101,15 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .map(|v| v.clone())
         .unwrap_or_else(|_| FALLBACK_NO_CALENDAR_TITLE.to_string());
 
-    let app_handle = app.handle().clone();
+    let app_handle_menu = app.handle().clone();
 
     app.on_menu_event(move |_, event| match event.id.as_ref() {
-        "preferences" => commands::open_settings_window(&app_handle),
-        "quit" => app_handle.exit(0),
+        "preferences" => commands::open_settings_window(&app_handle_menu),
+        "quit" => app_handle_menu.exit(0),
         _ => {}
     });
+
+    let app_handle_click = app.handle().clone();
 
     TrayIconBuilder::with_id("main-tray")
         .icon(menu_bar_icon())
@@ -70,32 +118,20 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("AuraCalendar")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_tray_icon_event(move |tray, event| {
+        .on_tray_icon_event(move |_tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
             } = event
             {
-                let next_hidden = !toggle_state.fetch_xor(true, Ordering::Relaxed);
-                let title = if next_hidden {
-                    click_config
-                        .read()
-                        .map(|g| g.stealth_title().to_string())
-                        .unwrap_or_else(|_| "***".to_string())
-                } else {
-                    click_normal_title
-                        .lock()
-                        .map(|v| v.clone())
-                        .unwrap_or_else(|_| FALLBACK_CALENDAR_ERROR_TITLE.to_string())
-                };
-
-                if let Err(e) = tray.set_title(Some(title.as_str())) {
-                    eprintln!("failed to update tray title: {e}");
-                }
+                toggle_stealth(&app_handle_click);
             }
         })
         .build(app)?;
+
+    register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
+        .unwrap_or_else(|e| eprintln!("failed to register stealth shortcut: {e}"));
 
     let app_handle_loop = app.handle().clone();
 

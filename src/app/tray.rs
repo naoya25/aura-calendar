@@ -3,14 +3,15 @@ use std::sync::{
     Arc, Mutex, RwLock,
 };
 
+use chrono::Utc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
-use tokio::sync::oneshot;
+use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
-use crate::services::calendar::fetch_next_title;
+use crate::services::calendar::{fetch_events, render_title, CachedEvent};
 use crate::ui::icon::menu_bar_icon;
 
 use super::commands::{self, ConfigState, RefreshSignal};
@@ -18,12 +19,14 @@ use super::commands::{self, ConfigState, RefreshSignal};
 const FALLBACK_NO_CALENDAR_TITLE: &str = "Aura: no calendar";
 const FALLBACK_CALENDAR_ERROR_TITLE: &str = "Aura: calendar error";
 
-pub struct ShutdownHandle(pub Mutex<Option<oneshot::Sender<()>>>);
+pub struct ShutdownHandle(pub broadcast::Sender<()>);
 
 pub struct StealthState {
     pub is_hidden: Arc<AtomicBool>,
     pub normal_title: Arc<Mutex<String>>,
 }
+
+pub struct CachedEvents(pub Mutex<Option<Vec<CachedEvent>>>);
 
 pub fn toggle_stealth(app: &tauri::AppHandle) {
     let stealth = app.state::<StealthState>();
@@ -67,7 +70,6 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create()?;
     let config_arc = Arc::new(RwLock::new(config.clone()));
 
-    // 設定画面コマンドと共有する状態を登録
     app.manage(ConfigState(Arc::clone(&config_arc)));
     let refresh_notify = Arc::new(tokio::sync::Notify::new());
     app.manage(RefreshSignal(Arc::clone(&refresh_notify)));
@@ -79,14 +81,11 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         is_hidden: Arc::clone(&is_hidden),
         normal_title: Arc::clone(&normal_title),
     });
+    app.manage(CachedEvents(Mutex::new(None)));
 
-    let updater_hidden = Arc::clone(&is_hidden);
-    let updater_title = Arc::clone(&normal_title);
-    let updater_config = Arc::clone(&config_arc);
-    let updater_refresh = Arc::clone(&refresh_notify);
-
-    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
-    app.manage(ShutdownHandle(Mutex::new(Some(cancel_tx))));
+    // broadcast チャンネル: 複数タスクに同時シャットダウン通知
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    app.manage(ShutdownHandle(shutdown_tx.clone()));
 
     let menu = Menu::with_items(
         app,
@@ -102,7 +101,6 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| FALLBACK_NO_CALENDAR_TITLE.to_string());
 
     let app_handle_menu = app.handle().clone();
-
     app.on_menu_event(move |_, event| match event.id.as_ref() {
         "preferences" => commands::open_settings_window(&app_handle_menu),
         "quit" => app_handle_menu.exit(0),
@@ -110,7 +108,6 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let app_handle_click = app.handle().clone();
-
     TrayIconBuilder::with_id("main-tray")
         .icon(menu_bar_icon())
         .icon_as_template(true)
@@ -133,49 +130,87 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
         .unwrap_or_else(|e| eprintln!("failed to register stealth shortcut: {e}"));
 
-    let app_handle_loop = app.handle().clone();
+    // ── 取得タスク（長周期）──────────────────────────────────────────
+    {
+        let app_handle = app.handle().clone();
+        let fetch_config = Arc::clone(&config_arc);
+        let fetch_refresh = Arc::clone(&refresh_notify);
+        let mut shutdown_rx = shutdown_tx.subscribe();
 
-    tauri::async_runtime::spawn(async move {
-        tokio::pin!(cancel_rx);
-
-        loop {
-            let (next_title, duration) = {
-                let config = updater_config
-                    .read()
-                    .map(|g| g.clone())
-                    .unwrap_or_default();
-                let duration =
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let config = fetch_config.read().map(|g| g.clone()).unwrap_or_default();
+                let fetch_duration =
                     std::time::Duration::from_secs(config.refresh_interval_seconds);
-                let title = match fetch_next_title(&config).await {
-                    Ok(Some(t)) => t,
-                    Ok(None) => config.normal_title(),
+
+                let events = match fetch_events(&config).await {
+                    Ok(events) => events,
                     Err(e) => {
                         eprintln!("failed to fetch calendar: {e}");
-                        config.normal_title()
+                        None
                     }
                 };
-                (title, duration)
-            };
 
-            if let Ok(mut t) = updater_title.lock() {
-                *t = next_title.clone();
-            }
+                if let Ok(mut cached) = app_handle.state::<CachedEvents>().0.lock() {
+                    *cached = events;
+                }
 
-            if !updater_hidden.load(Ordering::Relaxed) {
-                if let Some(tray) = app_handle_loop.tray_by_id("main-tray") {
-                    if let Err(e) = tray.set_title(Some(next_title.as_str())) {
-                        eprintln!("failed to refresh tray title: {e}");
-                    }
+                tokio::select! {
+                    _ = shutdown_rx.recv() => break,
+                    _ = fetch_refresh.notified() => {}
+                    _ = tokio::time::sleep(fetch_duration) => {}
                 }
             }
+        });
+    }
 
-            tokio::select! {
-                _ = &mut cancel_rx => break,
-                _ = updater_refresh.notified() => {}
-                _ = tokio::time::sleep(duration) => {}
+    // ── 表示タスク（短周期）──────────────────────────────────────────
+    {
+        let app_handle = app.handle().clone();
+        let disp_config = Arc::clone(&config_arc);
+        let disp_hidden = Arc::clone(&is_hidden);
+        let disp_title = Arc::clone(&normal_title);
+        let mut shutdown_rx = shutdown_tx.subscribe();
+
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let config = disp_config.read().map(|g| g.clone()).unwrap_or_default();
+                let disp_duration =
+                    std::time::Duration::from_secs(config.display_interval_seconds);
+                let now = Utc::now();
+
+                let next_title = {
+                    let events = app_handle
+                        .state::<CachedEvents>()
+                        .0
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.clone());
+                    match events {
+                        Some(ref evts) => render_title(&config, evts, now),
+                        None => config.normal_title(),
+                    }
+                };
+
+                if let Ok(mut t) = disp_title.lock() {
+                    *t = next_title.clone();
+                }
+
+                if !disp_hidden.load(Ordering::Relaxed) {
+                    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                        if let Err(e) = tray.set_title(Some(next_title.as_str())) {
+                            eprintln!("failed to refresh tray title: {e}");
+                        }
+                    }
+                }
+
+                tokio::select! {
+                    _ = shutdown_rx.recv() => break,
+                    _ = tokio::time::sleep(disp_duration) => {}
+                }
             }
-        }
-    });
+        });
+    }
 
     Ok(())
 }

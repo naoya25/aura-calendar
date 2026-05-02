@@ -607,6 +607,7 @@
             <span class="format-block-label">通常フォーマット</span>
             <div class="format-block-actions">
               <button class="btn btn-ghost" id="btn-reset-format">↩ デフォルト</button>
+              <button class="btn btn-ghost" id="btn-copy-ai-prompt">✦ AIプロンプト</button>
               <button class="btn btn-accent" id="btn-preview">▶ プレビュー</button>
             </div>
           </div>
@@ -668,11 +669,18 @@
       <div class="section">
         <div class="section-label" style="padding-bottom: 4px;">更新設定</div>
         <div class="row">
-          <span class="row-label">更新間隔（秒）</span>
+          <span class="row-label">カレンダー取得間隔（秒）</span>
           <input type="number" id="refresh-interval" min="30" max="86400" step="30" />
         </div>
-        <div style="padding: 6px 16px 12px; font-size: 11px; color: var(--text-tertiary);">
-          最小 30 秒。変更は即座に反映されます。
+        <div style="padding: 2px 16px 8px; font-size: 11px; color: var(--text-tertiary);">
+          最小 30 秒。ネットワークからカレンダーを取得する間隔です。
+        </div>
+        <div class="row">
+          <span class="row-label">表示更新間隔（秒）</span>
+          <input type="number" id="display-interval" min="5" max="300" step="5" />
+        </div>
+        <div style="padding: 2px 16px 12px; font-size: 11px; color: var(--text-tertiary);">
+          最小 5 秒。キャッシュから「X分後」を再計算してメニューバーを更新する間隔です。
         </div>
       </div>
 
@@ -860,6 +868,40 @@
         }
       });
 
+      document.getElementById("btn-copy-ai-prompt").addEventListener("click", () => {
+        const currentTemplate = document.getElementById("normal-format").value;
+        const prompt = `# コンテキスト
+メニューバーアプリ「AuraCalendar」で使う Jinja2 テンプレートを書いてほしいです。
+テンプレートは1行で出力され、macOS のメニューバーに常時表示されます。
+
+## 使用できる変数
+
+| 変数 | 説明 |
+|------|------|
+| {{ total_minutes }} | イベント開始までの残り合計分（または経過分） |
+| {{ d }} | 残り日数 |
+| {{ h }} | 残り時間（0〜23） |
+| {{ m }} | 残り分（0〜59） |
+| {{ mm }} | 残り分（2桁ゼロ埋め） |
+| {{ title }} | イベントのタイトル |
+| {{ active }} | 進行中なら true、そうでなければ false（bool） |
+| {{ count }} | 同時刻の予定数 |
+
+## 現在のテンプレート
+
+\`\`\`
+${currentTemplate}
+\`\`\`
+
+# あなたの命令
+<ここに何を表示したいか書いてください>`;
+        navigator.clipboard.writeText(prompt).then(() => {
+          showToast("✓ AIプロンプトをコピーしました");
+        }).catch(() => {
+          showToast("コピーに失敗しました", true);
+        });
+      });
+
       document.getElementById("btn-cancel").addEventListener("click", () => window.close());
 
       document.getElementById("btn-save").addEventListener("click", async () => {
@@ -868,9 +910,14 @@
         const stealthFormat = document.getElementById("stealth-format").value.trim();
         const showTitle = document.getElementById("show-title").checked;
         const refreshInterval = parseInt(document.getElementById("refresh-interval").value, 10);
+        const displayInterval = parseInt(document.getElementById("display-interval").value, 10);
 
         if (isNaN(refreshInterval) || refreshInterval < 30) {
-          showToast("更新間隔は30秒以上にしてください", true);
+          showToast("カレンダー取得間隔は30秒以上にしてください", true);
+          return;
+        }
+        if (isNaN(displayInterval) || displayInterval < 5) {
+          showToast("表示更新間隔は5秒以上にしてください", true);
           return;
         }
 
@@ -882,6 +929,7 @@
             show_title: showTitle,
           },
           refresh_interval_seconds: refreshInterval,
+          display_interval_seconds: displayInterval,
           stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
         };
 
@@ -906,6 +954,7 @@
           document.getElementById("stealth-format").value = config.display.stealth_format;
           document.getElementById("show-title").checked = config.display.show_title;
           document.getElementById("refresh-interval").value = config.refresh_interval_seconds;
+          document.getElementById("display-interval").value = config.display_interval_seconds;
           stealthShortcutValue = config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
           renderShortcut(stealthShortcutValue);
         } catch (e) {

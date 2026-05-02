@@ -8,12 +8,16 @@ use thiserror::Error;
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS: u64 = 300;
 const MIN_REFRESH_INTERVAL_SECONDS: u64 = 30;
+const DEFAULT_DISPLAY_INTERVAL_SECONDS: u64 = 30;
+const MIN_DISPLAY_INTERVAL_SECONDS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
     pub calendars: Vec<CalendarConfig>,
     pub display: DisplayConfig,
     pub refresh_interval_seconds: u64,
+    #[serde(default = "default_display_interval_seconds")]
+    pub display_interval_seconds: u64,
     #[serde(default = "default_stealth_shortcut")]
     pub stealth_shortcut: String,
 }
@@ -37,6 +41,7 @@ impl Default for AppConfig {
             calendars: Vec::new(),
             display: DisplayConfig::default(),
             refresh_interval_seconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
+            display_interval_seconds: DEFAULT_DISPLAY_INTERVAL_SECONDS,
             stealth_shortcut: default_stealth_shortcut(),
         }
     }
@@ -112,6 +117,8 @@ struct RawAppConfig {
     display: DisplayConfig,
     #[serde(default = "default_refresh_interval_seconds")]
     refresh_interval_seconds: u64,
+    #[serde(default = "default_display_interval_seconds")]
+    display_interval_seconds: u64,
     #[serde(default = "default_stealth_shortcut")]
     stealth_shortcut: String,
 }
@@ -156,11 +163,20 @@ impl From<RawAppConfig> for LoadedConfig {
                 raw.refresh_interval_seconds
             };
 
+        let display_interval_seconds =
+            if raw.display_interval_seconds < MIN_DISPLAY_INTERVAL_SECONDS {
+                needs_normalization = true;
+                MIN_DISPLAY_INTERVAL_SECONDS
+            } else {
+                raw.display_interval_seconds
+            };
+
         Self {
             config: AppConfig {
                 calendars,
                 display: raw.display,
                 refresh_interval_seconds,
+                display_interval_seconds,
                 stealth_shortcut: raw.stealth_shortcut,
             },
             needs_normalization,
@@ -170,6 +186,10 @@ impl From<RawAppConfig> for LoadedConfig {
 
 fn default_refresh_interval_seconds() -> u64 {
     DEFAULT_REFRESH_INTERVAL_SECONDS
+}
+
+fn default_display_interval_seconds() -> u64 {
+    DEFAULT_DISPLAY_INTERVAL_SECONDS
 }
 
 fn default_stealth_shortcut() -> String {

@@ -9,7 +9,8 @@ use crate::config::AppConfig;
 const REQUEST_TIMEOUT_SECONDS: u64 = 10;
 const USER_AGENT: &str = "aura-calendar/0.1";
 
-pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, CalendarError> {
+/// カレンダーデータを HTTP 取得・パースし、最近傍のイベントグループを返す（長周期で呼ぶ）。
+pub async fn fetch_events(config: &AppConfig) -> Result<Option<Vec<CachedEvent>>, CalendarError> {
     if config.calendars.is_empty() {
         return Ok(None);
     }
@@ -21,7 +22,7 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
     let now = Utc::now();
     let mut first_error: Option<reqwest::Error> = None;
     let mut best_display_time: Option<DateTime<Utc>> = None;
-    let mut best_events: Vec<CalendarEvent> = Vec::new();
+    let mut best_events: Vec<CachedEvent> = Vec::new();
 
     for calendar in &config.calendars {
         let body = match fetch_calendar_body(&client, &calendar.ical_url).await {
@@ -55,7 +56,7 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
     }
 
     if !best_events.is_empty() {
-        return Ok(Some(format_title_group(config, &best_events, now)));
+        return Ok(Some(best_events));
     }
 
     if let Some(error) = first_error {
@@ -64,6 +65,12 @@ pub async fn fetch_next_title(config: &AppConfig) -> Result<Option<String>, Cale
 
     Ok(None)
 }
+
+/// キャッシュ済みイベントと現在時刻からタイトルを生成する（短周期で呼ぶ、IO なし）。
+pub fn render_title(config: &AppConfig, events: &[CachedEvent], now: DateTime<Utc>) -> String {
+    format_title_group(config, events, now)
+}
+
 
 async fn fetch_calendar_body(
     client: &reqwest::Client,
@@ -86,19 +93,19 @@ pub enum CalendarError {
     Request(reqwest::Error),
 }
 
-#[derive(Debug)]
-struct CalendarEvent {
-    start: DateTime<Utc>,
-    end: Option<DateTime<Utc>>,
-    title: String,
+#[derive(Debug, Clone)]
+pub struct CachedEvent {
+    pub start: DateTime<Utc>,
+    pub end: Option<DateTime<Utc>>,
+    pub title: String,
 }
 
-impl CalendarEvent {
-    fn is_active_at(&self, now: DateTime<Utc>) -> bool {
+impl CachedEvent {
+    pub fn is_active_at(&self, now: DateTime<Utc>) -> bool {
         self.start <= now && self.end.is_some_and(|end| now < end)
     }
 
-    fn display_time(&self, now: DateTime<Utc>) -> DateTime<Utc> {
+    pub fn display_time(&self, now: DateTime<Utc>) -> DateTime<Utc> {
         if self.is_active_at(now) {
             now
         } else {
@@ -107,7 +114,7 @@ impl CalendarEvent {
     }
 }
 
-fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> {
+fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
     let relevant = collect_relevant_events(ics, now);
 
     // 未開始の予定を優先し、なければ進行中の予定を使う。
@@ -126,11 +133,11 @@ fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> 
 }
 
 #[cfg(test)]
-fn parse_next_event(ics: &str, now: DateTime<Utc>) -> Option<CalendarEvent> {
+fn parse_next_event(ics: &str, now: DateTime<Utc>) -> Option<CachedEvent> {
     parse_concurrent_events(ics, now).into_iter().next()
 }
 
-fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> {
+fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
     let mut current_start: Option<DateTime<Utc>> = None;
     let mut current_end: Option<DateTime<Utc>> = None;
     let mut current_is_all_day = false;
@@ -168,7 +175,7 @@ fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CalendarEvent> 
                             now,
                         ));
                     } else {
-                        events.push(CalendarEvent { start, end, title });
+                        events.push(CachedEvent { start, end, title });
                     }
                 }
             }
@@ -219,7 +226,7 @@ fn expand_recurring_event(
     rrule: &str,
     exdates: &[DateTime<Utc>],
     now: DateTime<Utc>,
-) -> Vec<CalendarEvent> {
+) -> Vec<CachedEvent> {
     let start_tz = to_tz_datetime(start);
     let until = to_tz_datetime(now + Duration::days(30));
     let exdate_set: HashSet<DateTime<Utc>> = exdates.iter().copied().collect();
@@ -249,7 +256,7 @@ fn expand_recurring_event(
             continue;
         }
         let end_at = base_duration.map(|duration| start_at + duration);
-        events.push(CalendarEvent {
+        events.push(CachedEvent {
             start: start_at,
             end: end_at,
             title: title.clone(),
@@ -347,7 +354,7 @@ fn parse_datetime(value: &str) -> Option<DateTime<Utc>> {
     None
 }
 
-fn format_title_group(config: &AppConfig, events: &[CalendarEvent], now: DateTime<Utc>) -> String {
+fn format_title_group(config: &AppConfig, events: &[CachedEvent], now: DateTime<Utc>) -> String {
     if events.len() == 1 {
         let e = &events[0];
         return format_title(config, &e.title, e.display_time(now), now);
@@ -633,7 +640,7 @@ mod tests {
     fn format_title_group_single_event_uses_normal_format() {
         let config = crate::config::AppConfig::default();
         let now = fixed_now();
-        let events = vec![CalendarEvent {
+        let events = vec![CachedEvent {
             start: now + Duration::minutes(30),
             end: Some(now + Duration::minutes(60)),
             title: "MTG".to_string(),
@@ -648,8 +655,8 @@ mod tests {
         let now = fixed_now();
         let start = now + Duration::minutes(15);
         let events = vec![
-            CalendarEvent { start, end: Some(start + Duration::hours(1)), title: "MTG-A".to_string() },
-            CalendarEvent { start, end: Some(start + Duration::minutes(30)), title: "MTG-B".to_string() },
+            CachedEvent { start, end: Some(start + Duration::hours(1)), title: "MTG-A".to_string() },
+            CachedEvent { start, end: Some(start + Duration::minutes(30)), title: "MTG-B".to_string() },
         ];
         let result = format_title_group(&config, &events, now);
         // 各タイトルを個別に切り詰め: "MTG-A"(5)≤9, "MTG-B"(5)≤9 → そのまま結合
@@ -661,8 +668,8 @@ mod tests {
         let config = crate::config::AppConfig::default();
         let now = fixed_now();
         let events = vec![
-            CalendarEvent { start: now - Duration::hours(1), end: Some(now + Duration::hours(1)), title: "終日MTG".to_string() },
-            CalendarEvent { start: now - Duration::minutes(10), end: Some(now + Duration::minutes(20)), title: "朝会".to_string() },
+            CachedEvent { start: now - Duration::hours(1), end: Some(now + Duration::hours(1)), title: "終日MTG".to_string() },
+            CachedEvent { start: now - Duration::minutes(10), end: Some(now + Duration::minutes(20)), title: "朝会".to_string() },
         ];
         let result = format_title_group(&config, &events, now);
         // 各タイトルを個別に切り詰め: "終日MTG"(7)≤9, "朝会"(4)≤9 → そのまま結合

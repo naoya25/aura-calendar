@@ -28,10 +28,7 @@ pub fn run() {
             // バックグラウンドループの停止信号を送る
             tauri::RunEvent::Exit => {
                 let handle = app_handle.state::<tray::ShutdownHandle>();
-                let tx = handle.0.lock().ok().and_then(|mut guard| guard.take());
-                if let Some(tx) = tx {
-                    let _ = tx.send(());
-                }
+                let _ = handle.0.send(());
             }
             // 全ウィンドウを閉じてもアプリを終了しない（トレイアプリとして常駐）
             tauri::RunEvent::ExitRequested { api, .. } => {

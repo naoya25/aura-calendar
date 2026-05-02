@@ -36,15 +36,13 @@ pub fn run() {
             }
             // 設定ウィンドウの×ボタンは閉じるのではなく隠す
             tauri::RunEvent::WindowEvent {
-                label,
+                label: ref l,
                 event: tauri::WindowEvent::CloseRequested { api, .. },
                 ..
-            } => {
-                if label == "settings" {
-                    api.prevent_close();
-                    if let Some(win) = app_handle.get_webview_window("settings") {
-                        let _ = win.hide();
-                    }
+            } if l == "settings" => {
+                api.prevent_close();
+                if let Some(win) = app_handle.get_webview_window("settings") {
+                    let _ = win.hide();
                 }
             }
             _ => {}

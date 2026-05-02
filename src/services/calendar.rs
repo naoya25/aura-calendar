@@ -350,7 +350,11 @@ fn format_title_group(config: &AppConfig, events: &[CalendarEvent], now: DateTim
     let display_time = events[0].display_time(now);
     let active = display_time == now;
     let title = if config.display.show_title {
-        events.iter().map(|e| e.title.as_str()).collect::<Vec<_>>().join(", ")
+        events
+            .iter()
+            .map(|e| crate::format::truncate_title(&e.title, true))
+            .collect::<Vec<_>>()
+            .join(", ")
     } else {
         String::new()
     };
@@ -364,9 +368,13 @@ fn format_title(
     display_time: DateTime<Utc>,
     now: DateTime<Utc>,
 ) -> String {
-    let title_value = if config.display.show_title { title } else { "" };
+    let title_value = if config.display.show_title {
+        crate::format::truncate_title(title, false)
+    } else {
+        String::new()
+    };
     let active = display_time == now;
-    let ctx = crate::format::build_context(title_value.to_string(), display_time, now, active, 1);
+    let ctx = crate::format::build_context(title_value, display_time, now, active, 1);
     crate::format::render(&config.display.normal_format, ctx)
 }
 
@@ -538,19 +546,18 @@ mod tests {
 
     #[test]
     fn format_title_90_minutes_away() {
-        // デフォルトフォーマット: "{minutes_until}分後 {title}"
         let config = crate::config::AppConfig::default();
         let now = fixed_now();
         let start = now + Duration::minutes(90);
-        assert_eq!(format_title(&config, "MTG", start, now), "90分後 MTG");
+        assert_eq!(format_title(&config, "MTG", start, now), "1h30m|MTG");
     }
 
     #[test]
     fn format_title_active_event_shows_zero() {
         let config = crate::config::AppConfig::default();
         let now = fixed_now();
-        // display_time = now なので seconds = 0 → "0分後 MTG"
-        assert_eq!(format_title(&config, "MTG", now, now), "0分後 MTG");
+        // d=0, h=0, m=0 → "now"
+        assert_eq!(format_title(&config, "MTG", now, now), "now|MTG");
     }
 
     #[test]
@@ -559,8 +566,7 @@ mod tests {
         config.display.show_title = false;
         let now = fixed_now();
         let start = now + Duration::minutes(30);
-        // "30分後 " → trim → "30分後"
-        assert_eq!(format_title(&config, "Secret", start, now), "30分後");
+        assert_eq!(format_title(&config, "Secret", start, now), "30m|");
     }
 
     // --- parse_concurrent_events ---
@@ -617,7 +623,7 @@ mod tests {
             title: "MTG".to_string(),
         }];
         let result = format_title_group(&config, &events, now);
-        assert_eq!(result, "30分後 MTG");
+        assert_eq!(result, "30m|MTG");
     }
 
     #[test]
@@ -630,13 +636,12 @@ mod tests {
             CalendarEvent { start, end: Some(start + Duration::minutes(30)), title: "MTG-B".to_string() },
         ];
         let result = format_title_group(&config, &events, now);
-        assert_eq!(result, "15分後 MTG-A, MTG-B :2");
+        // 各タイトルを個別に切り詰め: "MTG-A"(5)≤9, "MTG-B"(5)≤9 → そのまま結合
+        assert_eq!(result, "15m|MTG-A, MTG-B :2");
     }
 
     #[test]
     fn format_title_group_multiple_active_events_shows_zero_minutes() {
-        // 進行中イベントは total_minutes=0。デフォルト形式では "0分後 ..." と表示される。
-        // "{% if not active %}" 等で制御したい場合はユーザーがテンプレートをカスタマイズする。
         let config = crate::config::AppConfig::default();
         let now = fixed_now();
         let events = vec![
@@ -644,6 +649,7 @@ mod tests {
             CalendarEvent { start: now - Duration::minutes(10), end: Some(now + Duration::minutes(20)), title: "朝会".to_string() },
         ];
         let result = format_title_group(&config, &events, now);
-        assert_eq!(result, "0分後 終日MTG, 朝会 :2");
+        // 各タイトルを個別に切り詰め: "終日MTG"(7)≤9, "朝会"(4)≤9 → そのまま結合
+        assert_eq!(result, "now|終日MTG, 朝会 :2");
     }
 }

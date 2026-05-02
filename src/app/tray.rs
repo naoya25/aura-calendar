@@ -92,13 +92,9 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
                 let wd = date.weekday().num_days_from_sunday() as usize;
                 format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
             };
-            if let Ok(header) = MenuItem::with_id(
-                app,
-                format!("date_{date}"),
-                label,
-                false,
-                None::<&str>,
-            ) {
+            if let Ok(header) =
+                MenuItem::with_id(app, format!("date_{date}"), label, false, None::<&str>)
+            {
                 all_items.push(Box::new(header));
             }
             last_date = Some(date);
@@ -111,13 +107,7 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
             format!("{:02}:{:02}", local_start.hour(), local_start.minute())
         };
         let label = format!("  {}   {}", time_str, event.title);
-        if let Ok(item) = MenuItem::with_id(
-            app,
-            format!("event_{i}"),
-            label,
-            false,
-            None::<&str>,
-        ) {
+        if let Ok(item) = MenuItem::with_id(app, format!("event_{i}"), label, false, None::<&str>) {
             all_items.push(Box::new(item));
         }
     }
@@ -133,17 +123,14 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
     if let Ok(sep) = PredefinedMenuItem::separator(app) {
         all_items.push(Box::new(sep));
     }
-    if let Ok(pref) =
-        MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)
-    {
+    if let Ok(pref) = MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>) {
         all_items.push(Box::new(pref));
     }
     if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>) {
         all_items.push(Box::new(quit));
     }
 
-    let refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
-        all_items.iter().map(|b| b.as_ref()).collect();
+    let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = all_items.iter().map(|b| b.as_ref()).collect();
 
     match Menu::with_items(app, &refs) {
         Ok(menu) => {
@@ -257,8 +244,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         tauri::async_runtime::spawn(async move {
             loop {
                 let config = disp_config.read().map(|g| g.clone()).unwrap_or_default();
-                let disp_duration =
-                    std::time::Duration::from_secs(config.display_interval_seconds);
+                let disp_duration = std::time::Duration::from_secs(config.display_interval_seconds);
                 let now = Utc::now();
 
                 let next_title = {

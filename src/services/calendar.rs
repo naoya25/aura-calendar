@@ -9,10 +9,15 @@ use crate::config::AppConfig;
 const REQUEST_TIMEOUT_SECONDS: u64 = 10;
 const USER_AGENT: &str = "aura-calendar/0.1";
 
-/// カレンダーデータを HTTP 取得・パースし、最近傍のイベントグループを返す（長周期で呼ぶ）。
-pub async fn fetch_events(config: &AppConfig) -> Result<Option<Vec<CachedEvent>>, CalendarError> {
+pub struct FetchResult {
+    pub tray_events: Option<Vec<CachedEvent>>,
+    pub schedule_events: Vec<CachedEvent>,
+}
+
+/// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと3日分の全予定を返す（長周期で呼ぶ）。
+pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
     if config.calendars.is_empty() {
-        return Ok(None);
+        return Ok(FetchResult { tray_events: None, schedule_events: Vec::new() });
     }
 
     let client = reqwest::Client::builder()
@@ -20,9 +25,11 @@ pub async fn fetch_events(config: &AppConfig) -> Result<Option<Vec<CachedEvent>>
         .user_agent(USER_AGENT)
         .build()?;
     let now = Utc::now();
+    let schedule_limit = now + Duration::days(3);
     let mut first_error: Option<reqwest::Error> = None;
     let mut best_display_time: Option<DateTime<Utc>> = None;
     let mut best_events: Vec<CachedEvent> = Vec::new();
+    let mut all_schedule: Vec<CachedEvent> = Vec::new();
 
     for calendar in &config.calendars {
         let body = match fetch_calendar_body(&client, &calendar.ical_url).await {
@@ -34,36 +41,42 @@ pub async fn fetch_events(config: &AppConfig) -> Result<Option<Vec<CachedEvent>>
         };
 
         let concurrent = parse_concurrent_events(&body, now);
-        if concurrent.is_empty() {
-            continue;
+        if !concurrent.is_empty() {
+            let dt = concurrent[0].display_time(now);
+            match best_display_time {
+                None => {
+                    best_display_time = Some(dt);
+                    best_events = concurrent;
+                }
+                Some(best_dt) if dt < best_dt => {
+                    best_display_time = Some(dt);
+                    best_events = concurrent;
+                }
+                Some(best_dt) if dt == best_dt => {
+                    best_events.extend(concurrent);
+                }
+                _ => {}
+            }
         }
 
-        let dt = concurrent[0].display_time(now);
-        match best_display_time {
-            None => {
-                best_display_time = Some(dt);
-                best_events = concurrent;
-            }
-            Some(best_dt) if dt < best_dt => {
-                best_display_time = Some(dt);
-                best_events = concurrent;
-            }
-            Some(best_dt) if dt == best_dt => {
-                best_events.extend(concurrent);
-            }
-            _ => {}
-        }
+        let schedule: Vec<CachedEvent> = collect_relevant_events(&body, now)
+            .into_iter()
+            .filter(|e| e.start < schedule_limit)
+            .collect();
+        all_schedule.extend(schedule);
     }
 
+    all_schedule.sort_by_key(|e| e.start);
+
     if !best_events.is_empty() {
-        return Ok(Some(best_events));
+        return Ok(FetchResult { tray_events: Some(best_events), schedule_events: all_schedule });
     }
 
     if let Some(error) = first_error {
         return Err(CalendarError::Request(error));
     }
 
-    Ok(None)
+    Ok(FetchResult { tray_events: None, schedule_events: all_schedule })
 }
 
 /// キャッシュ済みイベントと現在時刻からタイトルを生成する（短周期で呼ぶ、IO なし）。

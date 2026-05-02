@@ -3,15 +3,15 @@ use std::sync::{
     Arc, Mutex, RwLock,
 };
 
-use chrono::Utc;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use chrono::{Datelike, Local, Timelike, Utc};
+use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
-use crate::services::calendar::{fetch_events, render_title, CachedEvent};
+use crate::services::calendar::{fetch, render_title, CachedEvent};
 use crate::ui::icon::menu_bar_icon;
 
 use super::commands::{self, ConfigState, RefreshSignal};
@@ -66,6 +66,97 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
     }
 }
 
+/// 3日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
+pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
+    let now_utc = Utc::now();
+    let now_local = Local::now();
+    let today = now_local.date_naive();
+    let weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+
+    let mut all_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
+    let mut last_date: Option<chrono::NaiveDate> = None;
+
+    for (i, event) in schedule.iter().enumerate() {
+        let local_start = event.start.with_timezone(&Local);
+        let date = local_start.date_naive();
+
+        if Some(date) != last_date {
+            if last_date.is_some() {
+                if let Ok(sep) = PredefinedMenuItem::separator(app) {
+                    all_items.push(Box::new(sep));
+                }
+            }
+            let label = if date == today {
+                "Today".to_string()
+            } else {
+                let wd = date.weekday().num_days_from_sunday() as usize;
+                format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
+            };
+            if let Ok(header) = MenuItem::with_id(
+                app,
+                format!("date_{date}"),
+                label,
+                false,
+                None::<&str>,
+            ) {
+                all_items.push(Box::new(header));
+            }
+            last_date = Some(date);
+        }
+
+        let is_active = event.is_active_at(now_utc);
+        let time_str = if is_active {
+            "now".to_string()
+        } else {
+            format!("{:02}:{:02}", local_start.hour(), local_start.minute())
+        };
+        let label = format!("  {}   {}", time_str, event.title);
+        if let Ok(item) = MenuItem::with_id(
+            app,
+            format!("event_{i}"),
+            label,
+            false,
+            None::<&str>,
+        ) {
+            all_items.push(Box::new(item));
+        }
+    }
+
+    if all_items.is_empty() {
+        if let Ok(empty) =
+            MenuItem::with_id(app, "no_events", "予定なし (3日分)", false, None::<&str>)
+        {
+            all_items.push(Box::new(empty));
+        }
+    }
+
+    if let Ok(sep) = PredefinedMenuItem::separator(app) {
+        all_items.push(Box::new(sep));
+    }
+    if let Ok(pref) =
+        MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)
+    {
+        all_items.push(Box::new(pref));
+    }
+    if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>) {
+        all_items.push(Box::new(quit));
+    }
+
+    let refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
+        all_items.iter().map(|b| b.as_ref()).collect();
+
+    match Menu::with_items(app, &refs) {
+        Ok(menu) => {
+            if let Some(tray) = app.tray_by_id("main-tray") {
+                if let Err(e) = tray.set_menu(Some(menu)) {
+                    eprintln!("failed to set tray menu: {e}");
+                }
+            }
+        }
+        Err(e) => eprintln!("failed to build tray menu: {e}"),
+    }
+}
+
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create()?;
     let config_arc = Arc::new(RwLock::new(config.clone()));
@@ -83,15 +174,15 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     });
     app.manage(CachedEvents(Mutex::new(None)));
 
-    // broadcast チャンネル: 複数タスクに同時シャットダウン通知
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     app.manage(ShutdownHandle(shutdown_tx.clone()));
 
-    let menu = Menu::with_items(
+    // 初期メニュー（予定取得前）
+    let initial_menu = Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)?,
-            &MenuItem::with_id(app, "quit", "Quit AuraCalendar", true, None::<&str>)?,
+            &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
         ],
     )?;
 
@@ -107,24 +198,13 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     });
 
-    let app_handle_click = app.handle().clone();
     TrayIconBuilder::with_id("main-tray")
         .icon(menu_bar_icon())
         .icon_as_template(true)
         .title(initial_title.as_str())
         .tooltip("AuraCalendar")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_tray_icon_event(move |_tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                toggle_stealth(&app_handle_click);
-            }
-        })
+        .menu(&initial_menu)
+        .show_menu_on_left_click(true)
         .build(app)?;
 
     register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
@@ -143,17 +223,19 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 let fetch_duration =
                     std::time::Duration::from_secs(config.refresh_interval_seconds);
 
-                let events = match fetch_events(&config).await {
-                    Ok(events) => events,
+                let (tray_events, schedule_events) = match fetch(&config).await {
+                    Ok(result) => (result.tray_events, result.schedule_events),
                     Err(e) => {
                         eprintln!("failed to fetch calendar: {e}");
-                        None
+                        (None, Vec::new())
                     }
                 };
 
                 if let Ok(mut cached) = app_handle.state::<CachedEvents>().0.lock() {
-                    *cached = events;
+                    *cached = tray_events;
                 }
+
+                rebuild_tray_menu(&app_handle, &schedule_events);
 
                 tokio::select! {
                     _ = shutdown_rx.recv() => break,

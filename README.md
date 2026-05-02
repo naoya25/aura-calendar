@@ -98,7 +98,6 @@ Pull Request と `main` への push では GitHub Actions で fmt / check / clip
 
 ## 実装予定
 
-- [ ] 右クリック時に予定一覧表示
 - [ ] DMG 配布 / Apple Developer コードサイニング対応
 
 ## ライセンス

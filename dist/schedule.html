@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>予定</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f9f9fb;
+        --border: #e5e5ea;
+        --accent: #007aff;
+        --text: #1c1c1e;
+        --text-secondary: #6c6c70;
+        --text-tertiary: #aeaeb2;
+        --active-bg: rgba(0, 122, 255, 0.08);
+        --active-dot: #007aff;
+        --radius: 12px;
+        --shadow: 0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1c1e;
+          --surface: #252528;
+          --border: #3a3a3c;
+          --text: #f2f2f7;
+          --text-secondary: #8e8e93;
+          --text-tertiary: #48484a;
+          --active-bg: rgba(10, 132, 255, 0.12);
+          --shadow: 0 4px 24px rgba(0,0,0,0.5), 0 1px 4px rgba(0,0,0,0.3);
+        }
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html, body {
+        width: 300px;
+        max-height: 420px;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      .popup {
+        width: 300px;
+        max-height: 420px;
+        background: var(--bg);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        border: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .popup-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px 10px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .popup-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: -0.2px;
+      }
+      .popup-subtitle {
+        font-size: 11px;
+        color: var(--text-tertiary);
+      }
+
+      .scroll-area {
+        overflow-y: auto;
+        flex: 1;
+        padding: 6px 0 8px;
+      }
+      .scroll-area::-webkit-scrollbar { width: 4px; }
+      .scroll-area::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 2px;
+      }
+
+      .day-group {
+        padding: 0 14px;
+        margin-bottom: 4px;
+      }
+
+      .day-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 8px 0 4px;
+      }
+      .day-label.today {
+        color: var(--accent);
+      }
+
+      .event-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 5px 10px;
+        border-radius: 8px;
+        transition: background 0.1s;
+      }
+      .event-row:hover { background: var(--surface); }
+      .event-row.active { background: var(--active-bg); }
+
+      .event-time {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        flex-shrink: 0;
+        width: 52px;
+        padding-top: 1px;
+      }
+      .event-row.active .event-time { color: var(--accent); }
+
+      .event-title {
+        font-size: 13px;
+        color: var(--text);
+        line-height: 1.4;
+        word-break: break-word;
+      }
+
+      .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        gap: 8px;
+        color: var(--text-tertiary);
+      }
+      .empty-icon { font-size: 32px; }
+      .empty-text { font-size: 13px; font-weight: 500; }
+
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: var(--text-tertiary);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="popup">
+      <div class="popup-header">
+        <span class="popup-title">直近の予定</span>
+        <span class="popup-subtitle" id="header-sub">3日分</span>
+      </div>
+      <div class="scroll-area" id="content">
+        <div class="loading">読み込み中…</div>
+      </div>
+    </div>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const appWindow = window.__TAURI__.window.getCurrentWindow();
+
+      async function resizeToContent() {
+        const height = document.querySelector('.popup').offsetHeight;
+        const { LogicalSize } = window.__TAURI__.dpi;
+        await appWindow.setSize(new LogicalSize(300, height));
+      }
+
+      async function loadSchedule() {
+        const content = document.getElementById("content");
+        try {
+          const days = await invoke("get_schedule");
+          renderSchedule(days, content);
+        } catch (e) {
+          content.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">読み込み失敗</div></div>`;
+        }
+        await resizeToContent();
+      }
+
+      function renderSchedule(days, container) {
+        if (days.length === 0) {
+          container.innerHTML = `<div class="empty-state"><div class="empty-icon">🗓</div><div class="empty-text">予定はありません</div></div>`;
+          return;
+        }
+
+        container.innerHTML = "";
+        for (const day of days) {
+          const group = document.createElement("div");
+          group.className = "day-group";
+
+          const label = document.createElement("div");
+          label.className = "day-label" + (day.label === "Today" ? " today" : "");
+          label.textContent = day.label === "Today" ? "Today" : day.label;
+          group.appendChild(label);
+
+          for (const ev of day.events) {
+            const row = document.createElement("div");
+            row.className = "event-row" + (ev.is_active ? " active" : "");
+
+            const time = document.createElement("div");
+            time.className = "event-time";
+            time.textContent = ev.time;
+
+            const title = document.createElement("div");
+            title.className = "event-title";
+            title.textContent = ev.title;
+
+            row.appendChild(time);
+            row.appendChild(title);
+            group.appendChild(row);
+          }
+
+          container.appendChild(group);
+        }
+      }
+
+      appWindow.onFocusChanged(({ payload: focused }) => {
+        if (focused) loadSchedule();
+        else appWindow.hide();
+      });
+
+      loadSchedule();
+    </script>
+  </body>
+</html>

@@ -26,22 +26,26 @@ Google カレンダーなどの iCal URL を登録するだけで、複雑な認
 
 ## 🚀 インストール方法
 
-お好みに合わせて、2つの方法から選べます。
+### 方法1：DMGファイルからインストール
 
-### 方法1：DMGファイルからインストール（手軽に使いたい方向け）
+1.  [Releases ページ](https://github.com/naoya25/aura-calendar/releases) へ
+2.  `dmg`ファイルをダウンロード
+3.  ダウンロードした`dmg`ファイルをダブルクリックして起動
+4.  `AuraCalendar.app`を`Application`にドラッグ&ドロップ
+    <img width="659" height="393" alt="image" src="docs/images/installer.png" />
 
-1. [Releases ページ](https://github.com/naoya25/aura-calendar/releases) から最新の `.dmg` ファイルをダウンロードします。
-2. ダウンロードしたファイルを開き、アプリを `Applications` フォルダにドラッグ＆ドロップします。
+5.  `AuraCalendar.app`を起動
+    「"AuraCalendar.app"は壊れているため開けません...」という警告が出ます
 
-> **⚠️【初回起動時のご注意】**
-> 本アプリは未署名のため、初回起動時に「悪質なソフトウェアかどうかをAppleでは確認できないため…」という警告が出ます。以下の手順で開いてください。
->
-> 1. アプリのアイコンを **右クリック** します。
-> 2. メニューから **「開く」** を選択します。
-> 3. もう一度警告が出ますが、**「開く」** ボタンをクリックしてください。
->    _(※ 2回目以降は通常通り起動できます)_
+6.  terminalを開き以下のコマンドを実行
 
-### 方法2：ソースコードからビルドする（エンジニア向け・警告を回避したい方向け）
+    ```bash
+    xattr -cr /Applications/AuraCalendar.app
+    ```
+
+7.  もう一度`AuraCalendar.app`を開く
+
+### 方法2：ソースコードからビルド
 
 ご自身の環境でビルドすることで、Gatekeeperの警告を完全に回避できます。
 

@@ -57,7 +57,7 @@ Google カレンダーなどの iCal URL を登録するだけで、複雑な認
 
 ```bash
 # リポジトリをクローン
-git clone [https://github.com/naoya25/aura-calendar.git](https://github.com/naoya25/aura-calendar.git)
+git clone https://github.com/naoya25/aura-calendar.git
 cd aura-calendar
 
 # アプリをビルド（初回はコンパイルに時間がかかります）

@@ -48,7 +48,8 @@ pub fn toggle_stealth(app: &tauri::AppHandle) {
     };
 
     if let Some(tray) = app.tray_by_id("main-tray") {
-        if let Err(e) = tray.set_title(Some(title.as_str())) {
+        let spaced = format!(" {title}");
+        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
             eprintln!("failed to update tray title: {e}");
         }
     }
@@ -68,7 +69,6 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
 
 /// 3日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
-    let now_utc = Utc::now();
     let now_local = Local::now();
     let today = now_local.date_naive();
     let weekdays = ["日", "月", "火", "水", "木", "金", "土"];
@@ -93,28 +93,22 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
                 format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
             };
             if let Ok(header) =
-                MenuItem::with_id(app, format!("date_{date}"), label, false, None::<&str>)
+                MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
             {
                 all_items.push(Box::new(header));
             }
             last_date = Some(date);
         }
 
-        let is_active = event.is_active_at(now_utc);
-        let time_str = if is_active {
-            "now".to_string()
-        } else {
-            format!("{:02}:{:02}", local_start.hour(), local_start.minute())
-        };
-        let label = format!("  {}   {}", time_str, event.title);
-        if let Ok(item) = MenuItem::with_id(app, format!("event_{i}"), label, false, None::<&str>) {
+        let label = format_event_label(event, local_start);
+        if let Ok(item) = MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>) {
             all_items.push(Box::new(item));
         }
     }
 
     if all_items.is_empty() {
         if let Ok(empty) =
-            MenuItem::with_id(app, "no_events", "予定なし (3日分)", false, None::<&str>)
+            MenuItem::with_id(app, "no_events", "予定なし (3日分)", true, None::<&str>)
         {
             all_items.push(Box::new(empty));
         }
@@ -187,8 +181,8 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     TrayIconBuilder::with_id("main-tray")
         .icon(menu_bar_icon())
-        .icon_as_template(true)
-        .title(initial_title.as_str())
+        .icon_as_template(false)
+        .title(format!(" {initial_title}").leak())
         .tooltip("AuraCalendar")
         .menu(&initial_menu)
         .show_menu_on_left_click(true)
@@ -266,7 +260,8 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
                 if !disp_hidden.load(Ordering::Relaxed) {
                     if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                        if let Err(e) = tray.set_title(Some(next_title.as_str())) {
+                        let spaced = format!(" {next_title}");
+                        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
                             eprintln!("failed to refresh tray title: {e}");
                         }
                     }
@@ -281,4 +276,36 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn format_event_label(event: &CachedEvent, local_start: chrono::DateTime<Local>) -> String {
+    let start_hm = format!("{:02}:{:02}", local_start.hour(), local_start.minute());
+    let end_str = match event.end {
+        None => String::new(),
+        Some(end_utc) => {
+            let local_end = end_utc.with_timezone(&Local);
+            let day_diff = (local_end.date_naive() - local_start.date_naive()).num_days();
+            match day_diff {
+                0 => format!("{:02}:{:02}", local_end.hour(), local_end.minute()),
+                1 => format!("{:02}:{:02}", local_end.hour() + 24, local_end.minute()),
+                _ => String::new(),
+            }
+        }
+    };
+    let title = truncate_chars(&event.title, 20);
+    if end_str.is_empty() {
+        format!("{}~ {}", start_hm, title)
+    } else {
+        format!("{}~{} {}", start_hm, end_str, title)
+    }
+}
+
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut chars = s.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{}...", truncated)
+    } else {
+        truncated
+    }
 }

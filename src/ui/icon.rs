@@ -19,7 +19,6 @@ fn sdf_rect(px: f32, py: f32, hx: f32, hy: f32) -> f32 {
     qx.max(qy).min(0.0) + (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt()
 }
 
-
 pub fn menu_bar_icon() -> Image<'static> {
     let width: usize = 18;
     let height: usize = 18;
@@ -32,10 +31,10 @@ pub fn menu_bar_icon() -> Image<'static> {
 
     // Neon line: top-right corner → bottom edge 1/3 from left
     // Pull both ends inward by `gap` px so the line doesn't touch the square.
-    let ax_full = cx + hx;                              // 16.0 (top-right)
-    let ay_full = cy - hy;                              //  2.0
+    let ax_full = cx + hx; // 16.0 (top-right)
+    let ay_full = cy - hy; //  2.0
     let bx_full = cx - hx + (2.0 * hx) * (1.0 / 3.0); //  6.7 (bottom 1/3)
-    let by_full = cy + hy;                              // 16.0
+    let by_full = cy + hy; // 16.0
 
     let gap = 2.5_f32;
     let full_len = ((bx_full - ax_full).powi(2) + (by_full - ay_full).powi(2)).sqrt();
@@ -50,9 +49,9 @@ pub fn menu_bar_icon() -> Image<'static> {
         for col in 0..width {
             let px = col as f32 + 0.5;
             let py = row as f32 + 0.5;
-            let i  = (row * width + col) * 4;
+            let i = (row * width + col) * 4;
 
-            let d_sq   = sdf_rect(px - cx, py - cy, hx, hy).abs();
+            let d_sq = sdf_rect(px - cx, py - cy, hx, hy).abs();
             let d_line = seg_dist(px, py, lax, lay, lbx, lby);
 
             let mut acc_r = 0.0_f32;
@@ -99,7 +98,7 @@ pub fn menu_bar_icon() -> Image<'static> {
             }
 
             if acc_a > 0.5 {
-                rgba[i]     = acc_r as u8;
+                rgba[i] = acc_r as u8;
                 rgba[i + 1] = acc_g as u8;
                 rgba[i + 2] = acc_b as u8;
                 rgba[i + 3] = acc_a.min(255.0) as u8;

@@ -74,7 +74,7 @@ jobs:
           1. \`AuraCalendar_${VERSION_NO_V}_aarch64.dmg\`をダウンロード
           2. ダウンロードした\`dmg\`ファイルをダブルクリックして起動
           3. \`AuraCalendar.app\`を\`Application\`にドラッグ&ドロップ
-          <img width="659" height="393" alt="image" src="https://github.com/user-attachments/assets/e6ba7b29-a96d-4a5e-a8a1-7c18a55df3c4" />
+          ![](https://github.com/naoya25/aura-calendar/blob/main/screenshot/instoller.png)
 
           4. \`AuraCalendar.app\`を起動
           「\"AuraCalendar.app\"は壊れているため開けません...」という警告が出ます

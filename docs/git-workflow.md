@@ -58,3 +58,9 @@ git merge release/vx.x.x
 # 5. 不要になったリリースブランチを削除
 git branch -d release/vx.x.x
 ```
+
+## 4. リリース自動化（GitHub Actions）
+
+- `release/*` ブランチのPRが `main` に **merge** された時、GitHub Actions が自動実行されます
+- 実行内容: DMG ビルド → GitHub Release 作成 → DMG を asset 添付
+- リリース本文にはインストール手順（`xattr -cr /Applications/AuraCalendar.app` を含む）を自動挿入します

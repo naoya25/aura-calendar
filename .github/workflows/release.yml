@@ -1,0 +1,95 @@
+name: Release DMG
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build DMG and Publish Release
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0" --locked
+
+      - name: Build bundle
+        run: cargo tauri build
+
+      - name: Prepare release metadata
+        id: metadata
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          VERSION_RAW="${HEAD_REF#release/}"
+          VERSION_NO_V="${VERSION_RAW#v}"
+
+          echo "tag_name=${VERSION_RAW}" >> "$GITHUB_OUTPUT"
+          echo "version_no_v=${VERSION_NO_V}" >> "$GITHUB_OUTPUT"
+
+      - name: Locate DMG
+        id: bundle
+        run: |
+          set -euo pipefail
+
+          DMG_FILE="$(find target/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -n 1)"
+          if [ -z "$DMG_FILE" ]; then
+            echo "DMG not found under target/release/bundle/dmg"
+            exit 1
+          fi
+
+          echo "dmg_file=$DMG_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Write release body
+        env:
+          VERSION_NO_V: ${{ steps.metadata.outputs.version_no_v }}
+        run: |
+          cat <<EOF > release_body.md
+          ## 本アプリのインストール手順
+
+          1. \`AuraCalendar_${VERSION_NO_V}_aarch64.dmg\`をダウンロード
+          2. ダウンロードした\`dmg\`ファイルをダブルクリックして起動
+          3. \`AuraCalendar.app\`を\`Application\`にドラッグ&ドロップ
+          <img width="659" height="393" alt="image" src="https://github.com/user-attachments/assets/e6ba7b29-a96d-4a5e-a8a1-7c18a55df3c4" />
+
+          4. \`AuraCalendar.app\`を起動
+          「\"AuraCalendar.app\"は壊れているため開けません...」という警告が出ます
+
+          5. terminalを開き以下のコマンドを実行
+          \`\`\`bash
+          xattr -cr /Applications/AuraCalendar.app
+          \`\`\`
+          6. もう一度\`AuraCalendar.app\`を開く
+          EOF
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.metadata.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          body_path: release_body.md
+          files: ${{ steps.bundle.outputs.dmg_file }}

@@ -4,7 +4,8 @@ use std::sync::{
 };
 
 use chrono::{Datelike, Local, Timelike, Utc};
-use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::image::Image;
+use tauri::menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -103,7 +104,19 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
         }
 
         let label = format_event_label(event, local_start);
-        if let Ok(item) = MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>) {
+        let icon = calendar_dot_icon(&event.calendar_color);
+        if let Ok(item) = IconMenuItem::with_id(
+            app,
+            format!("event_{i}"),
+            label.clone(),
+            true,
+            icon,
+            None::<&str>,
+        ) {
+            all_items.push(Box::new(item));
+        } else if let Ok(item) =
+            MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>)
+        {
             all_items.push(Box::new(item));
         }
     }
@@ -317,4 +330,47 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     } else {
         truncated
     }
+}
+
+fn calendar_dot_icon(color: &str) -> Option<Image<'static>> {
+    let [red, green, blue, alpha] = parse_hex_color(color)?;
+    let size = 12usize;
+    let mut rgba = vec![0u8; size * size * 4];
+    let center = (size as f32 - 1.0) / 2.0;
+    let radius = 4.6_f32;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            if dx * dx + dy * dy <= radius * radius {
+                let idx = (y * size + x) * 4;
+                rgba[idx] = red;
+                rgba[idx + 1] = green;
+                rgba[idx + 2] = blue;
+                rgba[idx + 3] = alpha;
+            }
+        }
+    }
+
+    Some(Image::new_owned(rgba, size as u32, size as u32))
+}
+
+fn parse_hex_color(value: &str) -> Option<[u8; 4]> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 && hex.len() != 8 {
+        return None;
+    }
+
+    let rgb = if hex.len() == 6 { hex } else { &hex[..6] };
+    let red = u8::from_str_radix(&rgb[0..2], 16).ok()?;
+    let green = u8::from_str_radix(&rgb[2..4], 16).ok()?;
+    let blue = u8::from_str_radix(&rgb[4..6], 16).ok()?;
+    let alpha = if hex.len() == 8 {
+        u8::from_str_radix(&hex[6..8], 16).ok()?
+    } else {
+        0xFF
+    };
+
+    Some([red, green, blue, alpha])
 }

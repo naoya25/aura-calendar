@@ -220,40 +220,27 @@
       .calendar-item {
         padding: 12px 16px;
         border-bottom: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 20px 40px 1fr 2fr 20px;
+        align-items: center;
         gap: 8px;
       }
       .calendar-item:last-child {
         border-bottom: none;
       }
 
-      .calendar-item-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
       .calendar-item-number {
         width: 20px;
         height: 20px;
-        border-radius: 50%;
-        background: var(--accent-bg);
-        color: var(--accent);
         font-size: 11px;
         font-weight: 700;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
-      }
-      .calendar-item-title {
-        font-size: 12px;
-        font-weight: 600;
         color: var(--text-secondary);
-        flex: 1;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
       }
+
       .btn-remove {
         width: 20px;
         height: 20px;
@@ -277,13 +264,121 @@
       }
 
       .calendar-item-fields {
-        display: grid;
-        grid-template-columns: 1fr 2fr;
-        gap: 6px;
+        display: contents;
       }
       .calendar-item-fields input {
-        flex: unset;
         width: 100%;
+        height: 40px;
+      }
+
+      .btn-color-picker {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        border: 2px solid var(--border);
+        background-color: transparent;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          background-color 0.15s;
+        flex-shrink: 0;
+        position: relative;
+      }
+      .btn-color-picker:hover {
+        border-color: var(--accent);
+      }
+      .btn-color-picker:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
+      }
+      .btn-color-picker::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 6px;
+        background: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 2px,
+          currentColor 2px,
+          currentColor 4px
+        );
+        opacity: 0;
+        pointer-events: none;
+      }
+      .btn-color-picker[data-color=""]::after {
+        opacity: 0.15;
+        color: var(--text-tertiary);
+      }
+
+      /* ─── Color Picker Modal ─── */
+      .color-picker-modal {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        animation: fadeIn 0.15s ease-out;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .color-picker-popup {
+        background: var(--surface);
+        border-radius: var(--radius-md);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        padding: 16px;
+        min-width: 240px;
+      }
+      .color-picker-header {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: var(--text);
+      }
+      .color-palette {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+      }
+      .color-option {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 2px solid var(--border);
+        background-color: var(--accent-bg);
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .color-option:hover {
+        transform: scale(1.08);
+        border-color: var(--accent);
+      }
+      .color-option:focus {
+        outline: none;
+        box-shadow:
+          0 0 0 2px var(--surface),
+          0 0 0 4px var(--accent);
+      }
+      .color-option.color-none {
+        background: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 2px,
+          var(--text-tertiary) 2px,
+          var(--text-tertiary) 4px
+        );
       }
 
       .input-hint {
@@ -989,6 +1084,34 @@
         }, 2500);
       }
 
+      const COLOR_PALETTE = [
+        "#f44336",
+        "#e91e63",
+        "#9c27b0",
+        "#673ab7",
+        "#3f51b5",
+        "#03a9f4",
+        "#009688",
+        "#4caf50",
+        "#ff9800",
+        "#ff5722",
+      ];
+
+      function assignedCalendarColor(index, name, icalUrl) {
+        // Rust側と同じロジック: 色がない場合は自動配色
+        if (!name && !icalUrl) {
+          return COLOR_PALETTE[index % COLOR_PALETTE.length];
+        }
+        // FNV-1a hash を使用
+        let hash = 0xcbf29ce484222325;
+        const text = name + icalUrl;
+        for (let i = 0; i < text.length; i++) {
+          hash ^= text.charCodeAt(i);
+          hash = (hash * 0x100000001b3) >>> 0;
+        }
+        return COLOR_PALETTE[(hash >>> 0) % COLOR_PALETTE.length];
+      }
+
       function renderCalendars(calendars) {
         const list = document.getElementById("calendar-list");
         list.innerHTML = "";
@@ -1007,21 +1130,88 @@
           const item = document.createElement("div");
           item.className = "calendar-item";
           item.innerHTML = `
-            <div class="calendar-item-header">
-              <div class="calendar-item-number">${i + 1}</div>
-              <div class="calendar-item-title">カレンダー ${i + 1}</div>
-              <button class="btn-remove" title="削除" data-index="${i}">−</button>
-            </div>
+            <div class="calendar-item-number">${i + 1}</div>
             <div class="calendar-item-fields">
+              <button type="button" class="btn-color-picker" data-index="${i}" data-color="" title="色を選択"></button>
               <input type="text" placeholder="名前" value="${escapeAttr(cal.name)}"
                      data-index="${i}" data-field="name" />
               <input type="url" placeholder="iCal URL (https://...)" value="${escapeAttr(cal.ical_url)}"
                      data-index="${i}" data-field="ical_url" />
-            </div>`;
+              <input type="hidden" value="${escapeAttr(cal.color ?? "")}" data-index="${i}" data-field="color" />
+            </div>
+            <button class="btn-remove" title="削除" data-index="${i}">−</button>`;
+
+          // 色値を hidden field から取得して button に適用
+          // 色が空の場合は自動配色を生成
+          const colorValue =
+            cal.color || assignedCalendarColor(i, cal.name, cal.ical_url);
+          const picker = item.querySelector(".btn-color-picker");
+          picker.setAttribute("data-color", cal.color || "");
+          picker.style.backgroundColor = colorValue;
+
           item
             .querySelector(".btn-remove")
             .addEventListener("click", () => removeCalendar(i));
+          item
+            .querySelector(".btn-color-picker")
+            .addEventListener("click", (e) => showColorPicker(e, i));
           list.appendChild(item);
+        });
+      }
+
+      function showColorPicker(event, calendarIndex) {
+        event.preventDefault();
+        const modal = document.createElement("div");
+        modal.className = "color-picker-modal";
+        modal.innerHTML = `
+          <div class="color-picker-popup">
+            <div class="color-picker-header">色を選択</div>
+            <div class="color-palette">
+              ${COLOR_PALETTE.map(
+                (color) => `
+                <button type="button" class="color-option" data-color="${color}" title="${color}"></button>
+              `,
+              ).join("")}
+              <button type="button" class="color-option color-none" data-color="" title="未設定"></button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+
+        // DOM に追加後、JavaScript で直接色を set
+        const colorButtons = modal.querySelectorAll(".color-option");
+        colorButtons.forEach((btn, idx) => {
+          if (idx < COLOR_PALETTE.length) {
+            btn.style.backgroundColor = COLOR_PALETTE[idx];
+          }
+        });
+
+        const updateColor = (color) => {
+          const picker = document.querySelector(
+            `.btn-color-picker[data-index="${calendarIndex}"]`,
+          );
+          const hidden = picker.parentElement.querySelector(
+            `input[data-field="color"][data-index="${calendarIndex}"]`,
+          );
+          // 直接 backgroundColor を設定
+          if (color) {
+            picker.style.backgroundColor = color;
+          } else {
+            picker.style.backgroundColor = "";
+          }
+          picker.setAttribute("data-color", color);
+          if (hidden) hidden.value = color;
+          modal.remove();
+        };
+
+        modal.querySelectorAll(".color-option").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            updateColor(btn.getAttribute("data-color"));
+          });
+        });
+
+        modal.addEventListener("click", (e) => {
+          if (e.target === modal) modal.remove();
         });
       }
 
@@ -1039,6 +1229,9 @@
               item
                 .querySelector("input[data-field='ical_url']")
                 ?.value.trim() ?? "",
+            color:
+              item.querySelector("input[data-field='color']")?.value.trim() ??
+              "",
           }),
         );
       }
@@ -1053,7 +1246,7 @@
         .getElementById("btn-add-calendar")
         .addEventListener("click", () => {
           const calendars = getCalendarsFromDOM();
-          calendars.push({ name: "", ical_url: "" });
+          calendars.push({ name: "", ical_url: "", color: "" });
           renderCalendars(calendars);
           const items = document.querySelectorAll(".calendar-item");
           items[items.length - 1]?.querySelector("input")?.focus();

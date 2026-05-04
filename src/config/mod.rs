@@ -26,6 +26,8 @@ pub struct AppConfig {
 pub struct CalendarConfig {
     pub name: String,
     pub ical_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,6 +98,22 @@ impl AppConfig {
         self.save_to(&config_path()?)
     }
 
+    pub fn normalize_calendar_colors(&mut self) {
+        for (index, calendar) in self.calendars.iter_mut().enumerate() {
+            if calendar
+                .color
+                .as_deref()
+                .is_none_or(|color| !is_valid_calendar_color(color))
+            {
+                calendar.color = Some(assigned_calendar_color(
+                    index,
+                    &calendar.name,
+                    &calendar.ical_url,
+                ));
+            }
+        }
+    }
+
     pub fn normal_title(&self) -> String {
         if self.calendars.is_empty() {
             "Aura: no calendar".to_string()
@@ -146,12 +164,29 @@ impl From<RawAppConfig> for LoadedConfig {
             .map(|(index, entry)| match entry {
                 RawCalendarConfig::Legacy(ical_url) => {
                     needs_normalization = true;
+                    let name = format!("Calendar {}", index + 1);
+                    let color = assigned_calendar_color(index, &name, &ical_url);
                     CalendarConfig {
-                        name: format!("Calendar {}", index + 1),
+                        name: name.clone(),
                         ical_url,
+                        color: Some(color),
                     }
                 }
-                RawCalendarConfig::Current(calendar) => calendar,
+                RawCalendarConfig::Current(mut calendar) => {
+                    if calendar
+                        .color
+                        .as_deref()
+                        .is_none_or(|color| !is_valid_calendar_color(color))
+                    {
+                        needs_normalization = true;
+                        calendar.color = Some(assigned_calendar_color(
+                            index,
+                            &calendar.name,
+                            &calendar.ical_url,
+                        ));
+                    }
+                    calendar
+                }
             })
             .collect();
 
@@ -182,6 +217,30 @@ impl From<RawAppConfig> for LoadedConfig {
             needs_normalization,
         }
     }
+}
+
+fn assigned_calendar_color(index: usize, name: &str, ical_url: &str) -> String {
+    const PALETTE: [&str; 10] = [
+        "#f44336", "#e91e63", "#9c27b0", "#673ab7", "#3f51b5", "#03a9f4", "#009688", "#4caf50",
+        "#ff9800", "#ff5722",
+    ];
+
+    if name.is_empty() && ical_url.is_empty() {
+        return PALETTE[index % PALETTE.len()].to_string();
+    }
+
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in name.bytes().chain(ical_url.bytes()) {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    PALETTE[(hash as usize) % PALETTE.len()].to_string()
+}
+
+fn is_valid_calendar_color(value: &str) -> bool {
+    let hex = value.trim().trim_start_matches('#');
+    hex.len() == 6 && hex.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn default_refresh_interval_seconds() -> u64 {
@@ -256,9 +315,47 @@ mod tests {
         config.calendars.push(CalendarConfig {
             name: "Main".to_string(),
             ical_url: "https://example.com/calendar.ics".to_string(),
+            color: None,
         });
 
         assert_eq!(config.normal_title(), "Aura: calendar ready");
+    }
+
+    #[test]
+    fn load_or_create_should_backfill_calendar_color() {
+        let path = temp_config_path();
+        fs::create_dir_all(path.parent().expect("temp path should have parent"))
+            .expect("temp directory should be creatable");
+        fs::write(
+            &path,
+            r#"{
+    "calendars": [
+        {
+            "name": "Main",
+            "ical_url": "https://example.com/calendar.ics"
+        }
+    ],
+    "display": {
+        "normal_format": "{minutes_until}分後 {title}",
+        "stealth_format": "***",
+        "show_title": true
+    },
+    "refresh_interval_seconds": 300,
+    "display_interval_seconds": 30,
+    "stealth_shortcut": "ctrl+a"
+}
+"#,
+        )
+        .expect("seed config should be writable");
+
+        let config = AppConfig::load_or_create_at(&path).expect("config should load");
+        let raw_config = fs::read_to_string(&path).expect("config file should exist");
+
+        assert_eq!(config.calendars.len(), 1);
+        assert!(config.calendars[0].color.is_some());
+        assert!(raw_config.contains("\"color\""));
+
+        let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
     }
 
     #[test]

@@ -45,34 +45,6 @@ jobs:
           echo "tag_name=${VERSION_RAW}" >> "$GITHUB_OUTPUT"
           echo "version_no_v=${VERSION_NO_V}" >> "$GITHUB_OUTPUT"
 
-      - name: Sync bundle version
-        env:
-          VERSION_NO_V: ${{ steps.metadata.outputs.version_no_v }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          version = os.environ["VERSION_NO_V"]
-
-          cargo_toml = Path("Cargo.toml")
-          cargo_lines = cargo_toml.read_text().splitlines()
-          for index, line in enumerate(cargo_lines):
-              if line.strip() == '[package]':
-                  for package_index in range(index + 1, len(cargo_lines)):
-                      if cargo_lines[package_index].startswith('version = '):
-                          cargo_lines[package_index] = f'version = "{version}"'
-                          break
-                  break
-          cargo_toml.write_text('\n'.join(cargo_lines) + '\n')
-
-          tauri_conf = Path('tauri.conf.json')
-          config = json.loads(tauri_conf.read_text())
-          config['version'] = version
-          tauri_conf.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n')
-          PY
-
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0" --locked
 

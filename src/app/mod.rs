@@ -20,6 +20,7 @@ pub fn run() {
             commands::get_default_config,
             commands::save_config,
             commands::preview_format,
+            commands::close_settings_window,
         ])
         .setup(tray::setup)
         .build(tauri::generate_context!())

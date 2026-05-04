@@ -56,13 +56,6 @@ pub fn preview_format(template: String) -> Result<String, String> {
     crate::format::preview(&template)
 }
 
-#[tauri::command]
-pub fn close_settings_window(app: tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("settings") {
-        let _ = win.hide();
-    }
-}
-
 pub fn open_settings_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("settings") {
         let _ = win.show();

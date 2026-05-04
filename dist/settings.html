@@ -20,10 +20,8 @@
         --text-secondary: #6c6c70;
         --text-tertiary: #aeaeb2;
         --input-bg: #ffffff;
-        --shadow-sm:
-          0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
-        --shadow-md:
-          0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+        --shadow-md: 0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
         --radius-sm: 8px;
         --radius-md: 12px;
         --radius-lg: 16px;
@@ -41,21 +39,15 @@
           --text-secondary: #8e8e93;
           --text-tertiary: #48484a;
           --input-bg: #2c2c2e;
-          --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-          --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+          --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+          --shadow-md: 0 2px 8px rgba(0,0,0,0.4);
         }
       }
 
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
-        font-family:
-          -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-          sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
         font-size: 13px;
         background: var(--bg);
         color: var(--text);
@@ -126,9 +118,7 @@
         gap: 12px;
         border-bottom: 1px solid var(--border);
       }
-      .row:last-child {
-        border-bottom: none;
-      }
+      .row:last-child { border-bottom: none; }
 
       .row-label {
         font-size: 13px;
@@ -152,9 +142,7 @@
         font-size: 13px;
         font-family: inherit;
         outline: none;
-        transition:
-          border-color 0.15s,
-          box-shadow 0.15s;
+        transition: border-color 0.15s, box-shadow 0.15s;
         -webkit-appearance: none;
       }
       input[type="text"]:focus,
@@ -165,9 +153,7 @@
         box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
       }
       input::placeholder,
-      textarea::placeholder {
-        color: var(--text-tertiary);
-      }
+      textarea::placeholder { color: var(--text-tertiary); }
 
       /* Toggle switch */
       .toggle-wrapper {
@@ -182,9 +168,7 @@
         height: 22px;
         cursor: pointer;
       }
-      .toggle input {
-        display: none;
-      }
+      .toggle input { display: none; }
       .toggle-track {
         display: block;
         width: 38px;
@@ -193,9 +177,7 @@
         background: var(--border-strong);
         transition: background 0.2s;
       }
-      .toggle input:checked + .toggle-track {
-        background: var(--success);
-      }
+      .toggle input:checked + .toggle-track { background: var(--success); }
       .toggle-thumb {
         position: absolute;
         top: 2px;
@@ -204,18 +186,13 @@
         height: 18px;
         border-radius: 50%;
         background: #fff;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         transition: transform 0.2s;
       }
-      .toggle input:checked ~ .toggle-thumb {
-        transform: translateX(16px);
-      }
+      .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
 
       /* ─── Calendar list ─── */
-      #calendar-list {
-        display: flex;
-        flex-direction: column;
-      }
+      #calendar-list { display: flex; flex-direction: column; }
 
       .calendar-item {
         padding: 12px 16px;
@@ -224,9 +201,7 @@
         flex-direction: column;
         gap: 8px;
       }
-      .calendar-item:last-child {
-        border-bottom: none;
-      }
+      .calendar-item:last-child { border-bottom: none; }
 
       .calendar-item-header {
         display: flex;
@@ -271,20 +246,14 @@
         transition: background 0.15s;
         flex-shrink: 0;
       }
-      .btn-remove:hover {
-        background: var(--danger);
-        color: #fff;
-      }
+      .btn-remove:hover { background: var(--danger); color: #fff; }
 
       .calendar-item-fields {
         display: grid;
         grid-template-columns: 1fr 2fr;
         gap: 6px;
       }
-      .calendar-item-fields input {
-        flex: unset;
-        width: 100%;
-      }
+      .calendar-item-fields input { flex: unset; width: 100%; }
 
       .input-hint {
         font-size: 11px;
@@ -308,18 +277,13 @@
         font-size: 13px;
         font-weight: 500;
         cursor: pointer;
-        transition:
-          background 0.15s,
-          border-color 0.15s;
+        transition: background 0.15s, border-color 0.15s;
       }
       .btn-add:hover {
         background: var(--accent-bg);
         border-color: var(--accent);
       }
-      .btn-add-icon {
-        font-size: 15px;
-        line-height: 1;
-      }
+      .btn-add-icon { font-size: 15px; line-height: 1; }
 
       .empty-state {
         padding: 28px 16px;
@@ -327,18 +291,9 @@
         color: var(--text-secondary);
         font-size: 13px;
       }
-      .empty-state-icon {
-        font-size: 28px;
-        margin-bottom: 8px;
-      }
-      .empty-state-text {
-        font-weight: 500;
-      }
-      .empty-state-sub {
-        font-size: 12px;
-        color: var(--text-tertiary);
-        margin-top: 4px;
-      }
+      .empty-state-icon { font-size: 28px; margin-bottom: 8px; }
+      .empty-state-text { font-weight: 500; }
+      .empty-state-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; }
 
       /* ─── Format section ─── */
       .format-block {
@@ -375,9 +330,7 @@
         resize: vertical;
         min-height: 56px;
         outline: none;
-        transition:
-          border-color 0.15s,
-          box-shadow 0.15s;
+        transition: border-color 0.15s, box-shadow 0.15s;
       }
       .format-template:focus {
         border-color: var(--accent);
@@ -407,10 +360,7 @@
         border-color: rgba(52, 199, 89, 0.3);
         color: var(--text);
       }
-      .preview-arrow {
-        color: var(--text-tertiary);
-        flex-shrink: 0;
-      }
+      .preview-arrow { color: var(--text-tertiary); flex-shrink: 0; }
 
       /* ─── Variable chips ─── */
       .vars-block {
@@ -487,9 +437,7 @@
         font-weight: 500;
         font-family: inherit;
         cursor: pointer;
-        transition:
-          opacity 0.15s,
-          background 0.15s;
+        transition: opacity 0.15s, background 0.15s;
         border: none;
         outline: none;
         white-space: nowrap;
@@ -499,19 +447,13 @@
         color: var(--text-secondary);
         border: 1px solid var(--border);
       }
-      .btn-ghost:hover {
-        background: var(--border);
-        color: var(--text);
-      }
+      .btn-ghost:hover { background: var(--border); color: var(--text); }
       .btn-accent {
         background: var(--accent-bg);
         color: var(--accent);
         border: 1px solid rgba(0, 122, 255, 0.2);
       }
-      .btn-accent:hover {
-        background: var(--accent);
-        color: #fff;
-      }
+      .btn-accent:hover { background: var(--accent); color: #fff; }
       .btn-secondary {
         padding: 7px 18px;
         background: var(--surface);
@@ -520,9 +462,7 @@
         border-radius: var(--radius-sm);
         font-size: 13px;
       }
-      .btn-secondary:hover {
-        background: var(--surface-secondary);
-      }
+      .btn-secondary:hover { background: var(--surface-secondary); }
       .btn-primary {
         padding: 7px 22px;
         background: var(--accent);
@@ -532,14 +472,8 @@
         font-weight: 600;
         box-shadow: 0 1px 3px rgba(0, 122, 255, 0.3);
       }
-      .btn-primary:hover {
-        background: var(--accent-hover);
-      }
-      .btn-primary:disabled {
-        opacity: 0.45;
-        cursor: default;
-        box-shadow: none;
-      }
+      .btn-primary:hover { background: var(--accent-hover); }
+      .btn-primary:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
       /* ─── Footer ─── */
       .footer {
@@ -552,10 +486,7 @@
         font-size: 11px;
         color: var(--text-tertiary);
       }
-      .footer-actions {
-        display: flex;
-        gap: 8px;
-      }
+      .footer-actions { display: flex; gap: 8px; }
 
       /* ─── Toast ─── */
       #toast {
@@ -570,12 +501,10 @@
         font-size: 13px;
         font-weight: 500;
         opacity: 0;
-        transition:
-          opacity 0.2s,
-          transform 0.2s;
+        transition: opacity 0.2s, transform 0.2s;
         pointer-events: none;
         white-space: nowrap;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.25);
         display: flex;
         align-items: center;
         gap: 6px;
@@ -584,22 +513,14 @@
         opacity: 1;
         transform: translateX(-50%) translateY(0);
       }
-      #toast.error {
-        background: var(--danger);
-      }
+      #toast.error { background: var(--danger); }
       @media (prefers-color-scheme: dark) {
-        #toast {
-          background: #3a3a3c;
-        }
-        #toast.error {
-          background: var(--danger);
-        }
+        #toast { background: #3a3a3c; }
+        #toast.error { background: var(--danger); }
       }
 
       /* Number input width */
-      input[type="number"] {
-        max-width: 120px;
-      }
+      input[type="number"] { max-width: 120px; }
 
       /* ─── Shortcut recorder ─── */
       .shortcut-recorder {
@@ -614,25 +535,16 @@
         user-select: none;
         flex: 1;
         min-height: 32px;
-        transition:
-          border-color 0.15s,
-          box-shadow 0.15s;
+        transition: border-color 0.15s, box-shadow 0.15s;
         outline: none;
       }
-      .shortcut-recorder:hover {
-        border-color: var(--accent);
-      }
+      .shortcut-recorder:hover { border-color: var(--accent); }
       .shortcut-recorder.recording {
         border-color: var(--accent);
         box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
         cursor: default;
       }
-      .shortcut-keys {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        flex: 1;
-      }
+      .shortcut-keys { display: flex; align-items: center; gap: 3px; flex: 1; }
       .shortcut-key {
         display: inline-flex;
         align-items: center;
@@ -654,15 +566,7 @@
         white-space: nowrap;
         flex-shrink: 0;
       }
-      @keyframes blink {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.35;
-        }
-      }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
       .shortcut-recording-text {
         font-size: 12px;
         color: var(--accent);
@@ -672,16 +576,10 @@
   </head>
   <body>
     <div class="container">
+
       <!-- Header -->
       <div class="page-header">
-        <div class="page-header-icon">
-          <img
-            src="icon-64.png"
-            width="32"
-            height="32"
-            style="border-radius: 6px; display: block"
-          />
-        </div>
+        <div class="page-header-icon"><img src="icon-64.png" width="32" height="32" style="border-radius:6px;display:block;" /></div>
         <div>
           <div class="page-title">AuraCalendar 設定</div>
           <div class="page-subtitle">カレンダーと表示の設定を管理します</div>
@@ -690,7 +588,7 @@
 
       <!-- Calendars -->
       <div class="section">
-        <div class="section-label" style="padding-bottom: 4px">カレンダー</div>
+        <div class="section-label" style="padding-bottom: 4px;">カレンダー</div>
         <div id="calendar-list"></div>
         <div class="add-row">
           <button class="btn-add" id="btn-add-calendar">
@@ -701,94 +599,43 @@
 
       <!-- Display Format -->
       <div class="section">
-        <div class="section-label" style="padding-bottom: 4px">表示形式</div>
+        <div class="section-label" style="padding-bottom: 4px;">表示形式</div>
 
         <!-- Normal format -->
         <div class="format-block">
           <div class="format-block-header">
             <span class="format-block-label">通常フォーマット</span>
             <div class="format-block-actions">
-              <button class="btn btn-ghost" id="btn-reset-format">
-                ↩ デフォルト
-              </button>
-              <button class="btn btn-ghost" id="btn-copy-ai-prompt">
-                ✦ AIプロンプト
-              </button>
-              <button class="btn btn-accent" id="btn-preview">
-                ▶ プレビュー
-              </button>
+              <button class="btn btn-ghost" id="btn-reset-format">↩ デフォルト</button>
+              <button class="btn btn-ghost" id="btn-copy-ai-prompt">✦ AIプロンプト</button>
+              <button class="btn btn-accent" id="btn-preview">▶ プレビュー</button>
             </div>
           </div>
-          <textarea
-            class="format-template"
-            id="normal-format"
-            rows="2"
-            spellcheck="false"
-          ></textarea>
-          <div
-            id="preview-result"
-            class="preview-result"
-            style="display: none"
-          ></div>
+          <textarea class="format-template" id="normal-format" rows="2" spellcheck="false"></textarea>
+          <div id="preview-result" class="preview-result" style="display:none;"></div>
         </div>
 
         <!-- Variable reference -->
         <div class="vars-block">
           <div class="vars-title">使用できる変数</div>
           <div class="vars-grid">
-            <div class="var-chip">
-              <code>&#123;&#123; total_minutes &#125;&#125;</code
-              ><span class="var-chip-desc">残り合計分</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; d &#125;&#125;</code
-              ><span class="var-chip-desc">日数</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; h &#125;&#125;</code
-              ><span class="var-chip-desc">時間(0-23)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; hh &#125;&#125;</code
-              ><span class="var-chip-desc">時間(2桁)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; m &#125;&#125;</code
-              ><span class="var-chip-desc">分(0-59)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; mm &#125;&#125;</code
-              ><span class="var-chip-desc">分(2桁)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; title &#125;&#125;</code
-              ><span class="var-chip-desc">タイトル</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; active &#125;&#125;</code
-              ><span class="var-chip-desc">進行中</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; count &#125;&#125;</code
-              ><span class="var-chip-desc">同時予定数</span>
-            </div>
+            <div class="var-chip"><code>&#123;&#123; total_minutes &#125;&#125;</code><span class="var-chip-desc">残り合計分</span></div>
+            <div class="var-chip"><code>&#123;&#123; d &#125;&#125;</code><span class="var-chip-desc">日数</span></div>
+<div class="var-chip"><code>&#123;&#123; h &#125;&#125;</code><span class="var-chip-desc">時間(0-23)</span></div>
+            <div class="var-chip"><code>&#123;&#123; hh &#125;&#125;</code><span class="var-chip-desc">時間(2桁)</span></div>
+            <div class="var-chip"><code>&#123;&#123; m &#125;&#125;</code><span class="var-chip-desc">分(0-59)</span></div>
+            <div class="var-chip"><code>&#123;&#123; mm &#125;&#125;</code><span class="var-chip-desc">分(2桁)</span></div>
+            <div class="var-chip"><code>&#123;&#123; title &#125;&#125;</code><span class="var-chip-desc">タイトル</span></div>
+            <div class="var-chip"><code>&#123;&#123; active &#125;&#125;</code><span class="var-chip-desc">進行中</span></div>
+            <div class="var-chip"><code>&#123;&#123; count &#125;&#125;</code><span class="var-chip-desc">同時予定数</span></div>
           </div>
         </div>
 
         <!-- Examples -->
         <div class="example-block">
           <div class="example-label">例</div>
-          <div class="example-code">
-            &#123;% if d > 0 %&#125;&#123;&#123; d &#125;&#125;日&#123;% endif
-            %&#125;&#123;% if h > 0 %&#125;&#123;&#123; h
-            &#125;&#125;時間&#123;% endif %&#125;&#123;&#123; m &#125;&#125;分後
-            &#123;&#123; title &#125;&#125;
-          </div>
-          <div class="example-code" style="margin-top: 4px">
-            &#123;% if active %&#125;進行中&#123;% else %&#125;&#123;&#123;
-            total_minutes &#125;&#125;分後&#123;% endif %&#125; &#123;&#123;
-            title &#125;&#125;
-          </div>
+          <div class="example-code">&#123;% if d > 0 %&#125;&#123;&#123; d &#125;&#125;日&#123;% endif %&#125;&#123;% if h > 0 %&#125;&#123;&#123; h &#125;&#125;時間&#123;% endif %&#125;&#123;&#123; m &#125;&#125;分後 &#123;&#123; title &#125;&#125;</div>
+          <div class="example-code" style="margin-top:4px;">&#123;% if active %&#125;進行中&#123;% else %&#125;&#123;&#123; total_minutes &#125;&#125;分後&#123;% endif %&#125; &#123;&#123; title &#125;&#125;</div>
         </div>
 
         <!-- Stealth format -->
@@ -800,16 +647,9 @@
         <!-- Stealth shortcut -->
         <div class="row">
           <span class="row-label">ステルス切替キー</span>
-          <div
-            class="shortcut-recorder"
-            id="stealth-shortcut"
-            tabindex="0"
-            role="button"
-          >
+          <div class="shortcut-recorder" id="stealth-shortcut" tabindex="0" role="button">
             <div class="shortcut-keys" id="stealth-shortcut-keys"></div>
-            <span class="shortcut-hint" id="stealth-shortcut-hint"
-              >クリックして変更</span
-            >
+            <span class="shortcut-hint" id="stealth-shortcut-hint">クリックして変更</span>
           </div>
         </div>
 
@@ -828,45 +668,20 @@
 
       <!-- Refresh -->
       <div class="section">
-        <div class="section-label" style="padding-bottom: 4px">更新設定</div>
+        <div class="section-label" style="padding-bottom: 4px;">更新設定</div>
         <div class="row">
           <span class="row-label">カレンダー取得間隔（秒）</span>
-          <input
-            type="number"
-            id="refresh-interval"
-            min="30"
-            max="86400"
-            step="30"
-          />
+          <input type="number" id="refresh-interval" min="30" max="86400" step="30" />
         </div>
-        <div
-          style="
-            padding: 2px 16px 8px;
-            font-size: 11px;
-            color: var(--text-tertiary);
-          "
-        >
+        <div style="padding: 2px 16px 8px; font-size: 11px; color: var(--text-tertiary);">
           最小 30 秒。ネットワークからカレンダーを取得する間隔です。
         </div>
         <div class="row">
           <span class="row-label">表示更新間隔（秒）</span>
-          <input
-            type="number"
-            id="display-interval"
-            min="5"
-            max="300"
-            step="5"
-          />
+          <input type="number" id="display-interval" min="5" max="300" step="5" />
         </div>
-        <div
-          style="
-            padding: 2px 16px 12px;
-            font-size: 11px;
-            color: var(--text-tertiary);
-          "
-        >
-          最小 5
-          秒。キャッシュから「X分後」を再計算してメニューバーを更新する間隔です。
+        <div style="padding: 2px 16px 12px; font-size: 11px; color: var(--text-tertiary);">
+          最小 5 秒。キャッシュから「X分後」を再計算してメニューバーを更新する間隔です。
         </div>
       </div>
 
@@ -878,6 +693,7 @@
           <button class="btn btn-primary" id="btn-save">保存</button>
         </div>
       </div>
+
     </div>
 
     <div id="toast"></div>
@@ -889,28 +705,22 @@
       let stealthShortcutValue = "ctrl+a";
 
       function shortcutToChips(shortcut) {
-        return shortcut
-          .toLowerCase()
-          .split("+")
-          .map((part) => {
-            const label =
-              { ctrl: "⌃", cmd: "⌘", alt: "⌥", shift: "⇧" }[part] ??
-              (/^f\d+$/.test(part) ? part.toUpperCase() : part.toUpperCase());
-            return `<span class="shortcut-key">${label}</span>`;
-          })
-          .join("");
+        return shortcut.toLowerCase().split("+").map(part => {
+          const label = { ctrl: "⌃", cmd: "⌘", alt: "⌥", shift: "⇧" }[part]
+            ?? (/^f\d+$/.test(part) ? part.toUpperCase() : part.toUpperCase());
+          return `<span class="shortcut-key">${label}</span>`;
+        }).join("");
       }
 
       function renderShortcut(shortcut) {
-        document.getElementById("stealth-shortcut-keys").innerHTML =
-          shortcutToChips(shortcut);
+        document.getElementById("stealth-shortcut-keys").innerHTML = shortcutToChips(shortcut);
       }
 
       function keyEventToShortcut(event) {
         const modifiers = [];
-        if (event.ctrlKey) modifiers.push("ctrl");
-        if (event.metaKey) modifiers.push("cmd");
-        if (event.altKey) modifiers.push("alt");
+        if (event.ctrlKey)  modifiers.push("ctrl");
+        if (event.metaKey)  modifiers.push("cmd");
+        if (event.altKey)   modifiers.push("alt");
         if (event.shiftKey) modifiers.push("shift");
 
         const key = event.key;
@@ -924,18 +734,11 @@
         else if (/^F\d+$/.test(key)) normalizedKey = key.toLowerCase();
         else {
           const keyMap = {
-            Enter: "enter",
-            Backspace: "backspace",
-            Delete: "delete",
-            Tab: "tab",
-            Home: "home",
-            End: "end",
-            PageUp: "pageup",
-            PageDown: "pagedown",
-            ArrowUp: "arrowup",
-            ArrowDown: "arrowdown",
-            ArrowLeft: "arrowleft",
-            ArrowRight: "arrowright",
+            Enter: "enter", Backspace: "backspace", Delete: "delete",
+            Tab: "tab", Home: "home", End: "end",
+            PageUp: "pageup", PageDown: "pagedown",
+            ArrowUp: "arrowup", ArrowDown: "arrowdown",
+            ArrowLeft: "arrowleft", ArrowRight: "arrowright",
           };
           normalizedKey = keyMap[key] ?? null;
         }
@@ -951,8 +754,7 @@
         function startRecording() {
           recorder.classList.add("recording");
           hint.textContent = "Esc でキャンセル";
-          keys.innerHTML =
-            '<span class="shortcut-recording-text">キーを押してください…</span>';
+          keys.innerHTML = '<span class="shortcut-recording-text">キーを押してください…</span>';
         }
 
         function stopRecording(newShortcut) {
@@ -966,7 +768,7 @@
           if (!recorder.classList.contains("recording")) startRecording();
         });
 
-        recorder.addEventListener("keydown", (event) => {
+        recorder.addEventListener("keydown", event => {
           if (!recorder.classList.contains("recording")) return;
           event.preventDefault();
           event.stopPropagation();
@@ -984,9 +786,7 @@
         const toast = document.getElementById("toast");
         toast.textContent = message;
         toast.className = "show" + (isError ? " error" : "");
-        setTimeout(() => {
-          toast.className = "";
-        }, 2500);
+        setTimeout(() => { toast.className = ""; }, 2500);
       }
 
       function renderCalendars(calendars) {
@@ -1018,9 +818,7 @@
               <input type="url" placeholder="iCal URL (https://...)" value="${escapeAttr(cal.ical_url)}"
                      data-index="${i}" data-field="ical_url" />
             </div>`;
-          item
-            .querySelector(".btn-remove")
-            .addEventListener("click", () => removeCalendar(i));
+          item.querySelector(".btn-remove").addEventListener("click", () => removeCalendar(i));
           list.appendChild(item);
         });
       }
@@ -1030,17 +828,10 @@
       }
 
       function getCalendarsFromDOM() {
-        return Array.from(document.querySelectorAll(".calendar-item")).map(
-          (item) => ({
-            name:
-              item.querySelector("input[data-field='name']")?.value.trim() ??
-              "",
-            ical_url:
-              item
-                .querySelector("input[data-field='ical_url']")
-                ?.value.trim() ?? "",
-          }),
-        );
+        return Array.from(document.querySelectorAll(".calendar-item")).map(item => ({
+          name: item.querySelector("input[data-field='name']")?.value.trim() ?? "",
+          ical_url: item.querySelector("input[data-field='ical_url']")?.value.trim() ?? "",
+        }));
       }
 
       function removeCalendar(index) {
@@ -1049,48 +840,38 @@
         renderCalendars(calendars);
       }
 
-      document
-        .getElementById("btn-add-calendar")
-        .addEventListener("click", () => {
-          const calendars = getCalendarsFromDOM();
-          calendars.push({ name: "", ical_url: "" });
-          renderCalendars(calendars);
-          const items = document.querySelectorAll(".calendar-item");
-          items[items.length - 1]?.querySelector("input")?.focus();
-        });
+      document.getElementById("btn-add-calendar").addEventListener("click", () => {
+        const calendars = getCalendarsFromDOM();
+        calendars.push({ name: "", ical_url: "" });
+        renderCalendars(calendars);
+        const items = document.querySelectorAll(".calendar-item");
+        items[items.length - 1]?.querySelector("input")?.focus();
+      });
 
-      document
-        .getElementById("btn-reset-format")
-        .addEventListener("click", () => {
-          document.getElementById("normal-format").value =
-            DEFAULTS.display.normal_format;
-          const pr = document.getElementById("preview-result");
-          pr.style.display = "none";
-          pr.className = "preview-result";
-        });
+      document.getElementById("btn-reset-format").addEventListener("click", () => {
+        document.getElementById("normal-format").value = DEFAULTS.display.normal_format;
+        const pr = document.getElementById("preview-result");
+        pr.style.display = "none";
+        pr.className = "preview-result";
+      });
 
-      document
-        .getElementById("btn-preview")
-        .addEventListener("click", async () => {
-          const template = document.getElementById("normal-format").value;
-          const pr = document.getElementById("preview-result");
-          pr.style.display = "flex";
-          try {
-            const rendered = await invoke("preview_format", { template });
-            pr.className = "preview-result success";
-            pr.innerHTML = `<span class="preview-arrow">→</span><span>${rendered}</span>`;
-          } catch (e) {
-            pr.className = "preview-result error";
-            pr.textContent = "エラー: " + e;
-          }
-        });
+      document.getElementById("btn-preview").addEventListener("click", async () => {
+        const template = document.getElementById("normal-format").value;
+        const pr = document.getElementById("preview-result");
+        pr.style.display = "flex";
+        try {
+          const rendered = await invoke("preview_format", { template });
+          pr.className = "preview-result success";
+          pr.innerHTML = `<span class="preview-arrow">→</span><span>${rendered}</span>`;
+        } catch (e) {
+          pr.className = "preview-result error";
+          pr.textContent = "エラー: " + e;
+        }
+      });
 
-      document
-        .getElementById("btn-copy-ai-prompt")
-        .addEventListener("click", () => {
-          const currentTemplate =
-            document.getElementById("normal-format").value;
-          const prompt = `# コンテキスト
+      document.getElementById("btn-copy-ai-prompt").addEventListener("click", () => {
+        const currentTemplate = document.getElementById("normal-format").value;
+        const prompt = `# コンテキスト
 メニューバーアプリ「AuraCalendar」で使う Jinja2 テンプレートを書いてほしいです。
 テンプレートは1行で出力され、macOS のメニューバーに常時表示されます。
 
@@ -1115,94 +896,67 @@ ${currentTemplate}
 
 # あなたの命令
 <ここに何を表示したいか書いてください>`;
-          navigator.clipboard
-            .writeText(prompt)
-            .then(() => {
-              showToast("✓ AIプロンプトをコピーしました");
-            })
-            .catch(() => {
-              showToast("コピーに失敗しました", true);
-            });
+        navigator.clipboard.writeText(prompt).then(() => {
+          showToast("✓ AIプロンプトをコピーしました");
+        }).catch(() => {
+          showToast("コピーに失敗しました", true);
         });
+      });
 
-      document
-        .getElementById("btn-cancel")
-        .addEventListener("click", async () => {
-          await invoke("close_settings_window");
-        });
+      document.getElementById("btn-cancel").addEventListener("click", () => window.close());
 
-      document
-        .getElementById("btn-save")
-        .addEventListener("click", async () => {
-          const calendars = getCalendarsFromDOM().filter(
-            (c) => c.ical_url.length > 0,
-          );
-          const normalFormat = document
-            .getElementById("normal-format")
-            .value.trim();
-          const stealthFormat = document
-            .getElementById("stealth-format")
-            .value.trim();
-          const showTitle = document.getElementById("show-title").checked;
-          const refreshInterval = parseInt(
-            document.getElementById("refresh-interval").value,
-            10,
-          );
-          const displayInterval = parseInt(
-            document.getElementById("display-interval").value,
-            10,
-          );
+      document.getElementById("btn-save").addEventListener("click", async () => {
+        const calendars = getCalendarsFromDOM().filter(c => c.ical_url.length > 0);
+        const normalFormat = document.getElementById("normal-format").value.trim();
+        const stealthFormat = document.getElementById("stealth-format").value.trim();
+        const showTitle = document.getElementById("show-title").checked;
+        const refreshInterval = parseInt(document.getElementById("refresh-interval").value, 10);
+        const displayInterval = parseInt(document.getElementById("display-interval").value, 10);
 
-          if (isNaN(refreshInterval) || refreshInterval < 30) {
-            showToast("カレンダー取得間隔は30秒以上にしてください", true);
-            return;
-          }
-          if (isNaN(displayInterval) || displayInterval < 5) {
-            showToast("表示更新間隔は5秒以上にしてください", true);
-            return;
-          }
+        if (isNaN(refreshInterval) || refreshInterval < 30) {
+          showToast("カレンダー取得間隔は30秒以上にしてください", true);
+          return;
+        }
+        if (isNaN(displayInterval) || displayInterval < 5) {
+          showToast("表示更新間隔は5秒以上にしてください", true);
+          return;
+        }
 
-          const config = {
-            calendars,
-            display: {
-              normal_format: normalFormat || DEFAULTS.display.normal_format,
-              stealth_format: stealthFormat,
-              show_title: showTitle,
-            },
-            refresh_interval_seconds: refreshInterval,
-            display_interval_seconds: displayInterval,
-            stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
-          };
+        const config = {
+          calendars,
+          display: {
+            normal_format: normalFormat || DEFAULTS.display.normal_format,
+            stealth_format: stealthFormat,
+            show_title: showTitle,
+          },
+          refresh_interval_seconds: refreshInterval,
+          display_interval_seconds: displayInterval,
+          stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
+        };
 
-          const saveBtn = document.getElementById("btn-save");
-          saveBtn.disabled = true;
-          try {
-            await invoke("save_config", { config });
-            showToast("✓ 保存しました");
-          } catch (e) {
-            showToast("保存に失敗しました: " + e, true);
-          } finally {
-            saveBtn.disabled = false;
-          }
-        });
+        const saveBtn = document.getElementById("btn-save");
+        saveBtn.disabled = true;
+        try {
+          await invoke("save_config", { config });
+          showToast("✓ 保存しました");
+        } catch (e) {
+          showToast("保存に失敗しました: " + e, true);
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
 
       async function init() {
         try {
           DEFAULTS = await invoke("get_default_config");
           const config = await invoke("get_config");
           renderCalendars(config.calendars);
-          document.getElementById("normal-format").value =
-            config.display.normal_format;
-          document.getElementById("stealth-format").value =
-            config.display.stealth_format;
-          document.getElementById("show-title").checked =
-            config.display.show_title;
-          document.getElementById("refresh-interval").value =
-            config.refresh_interval_seconds;
-          document.getElementById("display-interval").value =
-            config.display_interval_seconds;
-          stealthShortcutValue =
-            config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
+          document.getElementById("normal-format").value = config.display.normal_format;
+          document.getElementById("stealth-format").value = config.display.stealth_format;
+          document.getElementById("show-title").checked = config.display.show_title;
+          document.getElementById("refresh-interval").value = config.refresh_interval_seconds;
+          document.getElementById("display-interval").value = config.display_interval_seconds;
+          stealthShortcutValue = config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
           renderShortcut(stealthShortcutValue);
         } catch (e) {
           showToast("設定の読み込みに失敗しました: " + e, true);

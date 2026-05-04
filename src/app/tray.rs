@@ -21,8 +21,6 @@ const FALLBACK_CALENDAR_ERROR_TITLE: &str = "Aura: calendar error";
 
 pub struct ShutdownHandle(pub broadcast::Sender<()>);
 
-pub struct AllowExit(pub Arc<AtomicBool>);
-
 pub struct StealthState {
     pub is_hidden: Arc<AtomicBool>,
     pub normal_title: Arc<Mutex<String>>,
@@ -160,9 +158,6 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     app.manage(ShutdownHandle(shutdown_tx.clone()));
 
-    let allow_exit = Arc::new(AtomicBool::new(false));
-    app.manage(AllowExit(Arc::clone(&allow_exit)));
-
     // 初期メニュー（予定取得前）
     let initial_menu = Menu::with_items(
         app,
@@ -180,11 +175,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle_menu = app.handle().clone();
     app.on_menu_event(move |_, event| match event.id.as_ref() {
         "preferences" => commands::open_settings_window(&app_handle_menu),
-        "quit" => {
-            let allow_exit = app_handle_menu.state::<AllowExit>();
-            allow_exit.0.store(true, Ordering::Relaxed);
-            app_handle_menu.exit(0);
-        }
+        "quit" => app_handle_menu.exit(0),
         _ => {}
     });
 

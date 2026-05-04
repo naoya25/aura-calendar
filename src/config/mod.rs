@@ -103,7 +103,7 @@ impl AppConfig {
             if calendar
                 .color
                 .as_deref()
-                .map_or(true, |color| !is_valid_calendar_color(color))
+                .is_none_or(|color| !is_valid_calendar_color(color))
             {
                 calendar.color = Some(assigned_calendar_color(
                     index,
@@ -176,7 +176,7 @@ impl From<RawAppConfig> for LoadedConfig {
                     if calendar
                         .color
                         .as_deref()
-                        .map_or(true, |color| !is_valid_calendar_color(color))
+                        .is_none_or(|color| !is_valid_calendar_color(color))
                     {
                         needs_normalization = true;
                         calendar.color = Some(assigned_calendar_color(

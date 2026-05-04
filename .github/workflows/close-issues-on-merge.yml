@@ -1,0 +1,47 @@
+name: Close referenced issues on PR merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  close_issues:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Close referenced issues
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const text = `${pr.title}\n${pr.body || ''}`;
+            const regex = /#(\d+)/g;
+            const issues = new Set();
+            let m;
+            while ((m = regex.exec(text)) !== null) issues.add(Number(m[1]));
+
+            if (issues.size === 0) {
+              console.log('No referenced issues found in PR title/body.');
+              return;
+            }
+
+            for (const issue_number of issues) {
+              try {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  state: 'closed',
+                });
+                console.log(`Closed issue #${issue_number}`);
+              } catch (err) {
+                console.log(`Failed to close #${issue_number}: ${err}`);
+              }
+            }

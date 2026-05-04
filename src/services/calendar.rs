@@ -168,68 +168,62 @@ fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
     let mut events = Vec::new();
 
     for line in unfold_ical_lines(ics) {
-        match line.as_str() {
-            "BEGIN:VEVENT" => {
-                current_start = None;
-                current_end = None;
-                current_is_all_day = false;
-                current_title = None;
-                current_rrule = None;
-                current_exdates.clear();
-            }
-            "END:VEVENT" => {
-                if let Some(start) = current_start.take() {
-                    let end = current_end
-                        .take()
-                        .or_else(|| current_is_all_day.then_some(start + Duration::days(1)));
-                    let title = current_title
-                        .take()
-                        .filter(|value| !value.trim().is_empty())
-                        .unwrap_or_else(|| "予定あり".to_string());
-                    if let Some(rrule) = current_rrule.take() {
-                        events.extend(expand_recurring_event(
-                            start,
-                            end,
-                            title,
-                            &rrule,
-                            &current_exdates,
-                            now,
-                        ));
-                    } else {
-                        events.push(CachedEvent { start, end, title });
-                    }
+        if line.starts_with("BEGIN:VEVENT") {
+            current_start = None;
+            current_end = None;
+            current_is_all_day = false;
+            current_title = None;
+            current_rrule = None;
+            current_exdates.clear();
+        } else if line.starts_with("END:VEVENT") {
+            if let Some(start) = current_start.take() {
+                let end = current_end
+                    .take()
+                    .or_else(|| current_is_all_day.then_some(start + Duration::days(1)));
+                let title = current_title
+                    .take()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| "予定あり".to_string());
+                if let Some(rrule) = current_rrule.take() {
+                    events.extend(expand_recurring_event(
+                        start,
+                        end,
+                        title,
+                        &rrule,
+                        &current_exdates,
+                        now,
+                    ));
+                } else {
+                    events.push(CachedEvent { start, end, title });
                 }
             }
-            _ => {
-                if line.starts_with("DTSTART") {
-                    current_is_all_day = line.contains("VALUE=DATE");
-                    if let Some((_, raw_value)) = line.split_once(':') {
-                        if raw_value.len() == 8 {
-                            current_is_all_day = true;
-                        }
-                        current_start = parse_datetime(raw_value);
-                    }
-                } else if line.starts_with("DTEND") {
-                    if let Some((_, raw_value)) = line.split_once(':') {
-                        current_end = parse_datetime(raw_value);
-                    }
-                } else if line.starts_with("RRULE") {
-                    if let Some((_, raw_value)) = line.split_once(':') {
-                        current_rrule = Some(raw_value.to_string());
-                    }
-                } else if line.starts_with("EXDATE") {
-                    if let Some((_, raw_values)) = line.split_once(':') {
-                        current_exdates.extend(
-                            raw_values
-                                .split(',')
-                                .filter_map(|value| parse_datetime(value.trim())),
-                        );
-                    }
-                } else if line.starts_with("SUMMARY") {
-                    if let Some((_, summary)) = line.split_once(':') {
-                        current_title = Some(summary.to_string());
-                    }
+        } else if line.starts_with("DTSTART") {
+            current_is_all_day = line.contains("VALUE=DATE");
+            if let Some((_, raw_value)) = line.split_once(':') {
+                if raw_value.len() == 8 {
+                    current_is_all_day = true;
                 }
+                current_start = parse_datetime(raw_value);
+            }
+        } else if line.starts_with("DTEND") {
+            if let Some((_, raw_value)) = line.split_once(':') {
+                current_end = parse_datetime(raw_value);
+            }
+        } else if line.starts_with("RRULE") {
+            if let Some((_, raw_value)) = line.split_once(':') {
+                current_rrule = Some(raw_value.to_string());
+            }
+        } else if line.starts_with("EXDATE") {
+            if let Some((_, raw_values)) = line.split_once(':') {
+                current_exdates.extend(
+                    raw_values
+                        .split(',')
+                        .filter_map(|value| parse_datetime(value.trim())),
+                );
+            }
+        } else if line.starts_with("SUMMARY") {
+            if let Some((_, summary)) = line.split_once(':') {
+                current_title = Some(summary.to_string());
             }
         }
     }
@@ -338,16 +332,27 @@ fn to_utc_datetime(value: chrono::DateTime<Tz>) -> DateTime<Utc> {
 
 fn unfold_ical_lines(ics: &str) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
+    let mut current_line = String::new();
 
     for raw_line in ics.lines() {
         let line = raw_line.trim_end_matches('\r');
+
         if line.starts_with(' ') || line.starts_with('\t') {
-            if let Some(last) = lines.last_mut() {
-                last.push_str(line.trim_start());
+            // Continuation line: append to current line
+            current_line.push_str(line.trim_start());
+        } else {
+            // New line
+            if !current_line.is_empty() {
+                lines.push(current_line.clone());
+                current_line.clear();
             }
-            continue;
+            current_line.push_str(line);
         }
-        lines.push(line.to_string());
+    }
+
+    // Don't forget the last line
+    if !current_line.is_empty() {
+        lines.push(current_line);
     }
 
     lines

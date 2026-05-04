@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use thiserror::Error;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, CalendarConfig};
 
 const REQUEST_TIMEOUT_SECONDS: u64 = 10;
 const USER_AGENT: &str = "aura-calendar/0.1";
@@ -12,6 +12,11 @@ const USER_AGENT: &str = "aura-calendar/0.1";
 pub struct FetchResult {
     pub tray_events: Option<Vec<CachedEvent>>,
     pub schedule_events: Vec<CachedEvent>,
+}
+
+#[derive(Debug, Clone)]
+struct CalendarContext {
+    color: String,
 }
 
 /// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと3日分の全予定を返す（長周期で呼ぶ）。
@@ -34,7 +39,7 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
     let mut best_events: Vec<CachedEvent> = Vec::new();
     let mut all_schedule: Vec<CachedEvent> = Vec::new();
 
-    for calendar in &config.calendars {
+    for (index, calendar) in config.calendars.iter().enumerate() {
         let body = match fetch_calendar_body(&client, &calendar.ical_url).await {
             Ok(body) => body,
             Err(e) => {
@@ -42,8 +47,9 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
                 continue;
             }
         };
+        let context = resolved_calendar_context(index, calendar);
 
-        let concurrent = parse_concurrent_events(&body, now);
+        let concurrent = parse_concurrent_events_for_calendar(&body, now, &context);
         if !concurrent.is_empty() {
             let dt = concurrent[0].display_time(now);
             match best_display_time {
@@ -62,7 +68,7 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
             }
         }
 
-        let schedule: Vec<CachedEvent> = collect_relevant_events(&body, now)
+        let schedule: Vec<CachedEvent> = collect_relevant_events_for_calendar(&body, now, &context)
             .into_iter()
             .filter(|e| e.start < schedule_limit)
             .collect();
@@ -93,6 +99,15 @@ pub fn render_title(config: &AppConfig, events: &[CachedEvent], now: DateTime<Ut
     format_title_group(config, events, now)
 }
 
+fn resolved_calendar_context(index: usize, calendar: &CalendarConfig) -> CalendarContext {
+    CalendarContext {
+        color: calendar
+            .color
+            .clone()
+            .unwrap_or_else(|| fallback_calendar_color(index, &calendar.name, &calendar.ical_url)),
+    }
+}
+
 async fn fetch_calendar_body(
     client: &reqwest::Client,
     url: &str,
@@ -104,6 +119,25 @@ async fn fetch_calendar_body(
         .error_for_status()?
         .text()
         .await
+}
+
+fn fallback_calendar_color(index: usize, name: &str, ical_url: &str) -> String {
+    const PALETTE: [&str; 10] = [
+        "#f44336", "#e91e63", "#9c27b0", "#673ab7", "#3f51b5", "#03a9f4", "#009688", "#4caf50",
+        "#ff9800", "#ff5722",
+    ];
+
+    if name.is_empty() && ical_url.is_empty() {
+        return PALETTE[index % PALETTE.len()].to_string();
+    }
+
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in name.bytes().chain(ical_url.bytes()) {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    PALETTE[(hash as usize) % PALETTE.len()].to_string()
 }
 
 #[derive(Debug, Error)]
@@ -119,6 +153,7 @@ pub struct CachedEvent {
     pub start: DateTime<Utc>,
     pub end: Option<DateTime<Utc>>,
     pub title: String,
+    pub calendar_color: String,
 }
 
 impl CachedEvent {
@@ -135,8 +170,20 @@ impl CachedEvent {
     }
 }
 
+#[cfg(test)]
 fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
-    let relevant = collect_relevant_events(ics, now);
+    let context = CalendarContext {
+        color: "#9e9e9e".to_string(),
+    };
+    parse_concurrent_events_for_calendar(ics, now, &context)
+}
+
+fn parse_concurrent_events_for_calendar(
+    ics: &str,
+    now: DateTime<Utc>,
+    context: &CalendarContext,
+) -> Vec<CachedEvent> {
+    let relevant = collect_relevant_events_for_calendar(ics, now, context);
 
     // 未開始の予定を優先し、なければ進行中の予定を使う。
     // 長い予定の中に別の予定が入っている場合に次の予定を常に表示するため。
@@ -158,7 +205,11 @@ fn parse_next_event(ics: &str, now: DateTime<Utc>) -> Option<CachedEvent> {
     parse_concurrent_events(ics, now).into_iter().next()
 }
 
-fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
+fn collect_relevant_events_for_calendar(
+    ics: &str,
+    now: DateTime<Utc>,
+    context: &CalendarContext,
+) -> Vec<CachedEvent> {
     let mut current_start: Option<DateTime<Utc>> = None;
     let mut current_end: Option<DateTime<Utc>> = None;
     let mut current_is_all_day = false;
@@ -192,9 +243,15 @@ fn collect_relevant_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
                         &rrule,
                         &current_exdates,
                         now,
+                        context,
                     ));
                 } else {
-                    events.push(CachedEvent { start, end, title });
+                    events.push(CachedEvent {
+                        start,
+                        end,
+                        title,
+                        calendar_color: context.color.clone(),
+                    });
                 }
             }
         } else if line.starts_with("DTSTART") {
@@ -241,6 +298,7 @@ fn expand_recurring_event(
     rrule: &str,
     exdates: &[DateTime<Utc>],
     now: DateTime<Utc>,
+    context: &CalendarContext,
 ) -> Vec<CachedEvent> {
     let start_tz = to_tz_datetime(start);
     let until = to_tz_datetime(now + Duration::days(30));
@@ -276,6 +334,7 @@ fn expand_recurring_event(
             start: start_at,
             end: end_at,
             title: title.clone(),
+            calendar_color: context.color.clone(),
         });
     }
 
@@ -687,6 +746,7 @@ mod tests {
             start: now + Duration::minutes(30),
             end: Some(now + Duration::minutes(60)),
             title: "MTG".to_string(),
+            calendar_color: "#4caf50".to_string(),
         }];
         let result = format_title_group(&config, &events, now);
         assert_eq!(result, "30m|MTG");
@@ -702,11 +762,13 @@ mod tests {
                 start,
                 end: Some(start + Duration::hours(1)),
                 title: "MTG-A".to_string(),
+                calendar_color: "#4caf50".to_string(),
             },
             CachedEvent {
                 start,
                 end: Some(start + Duration::minutes(30)),
                 title: "MTG-B".to_string(),
+                calendar_color: "#4caf50".to_string(),
             },
         ];
         let result = format_title_group(&config, &events, now);
@@ -723,11 +785,13 @@ mod tests {
                 start: now - Duration::hours(1),
                 end: Some(now + Duration::hours(1)),
                 title: "終日MTG".to_string(),
+                calendar_color: "#4caf50".to_string(),
             },
             CachedEvent {
                 start: now - Duration::minutes(10),
                 end: Some(now + Duration::minutes(20)),
                 title: "朝会".to_string(),
+                calendar_color: "#4caf50".to_string(),
             },
         ];
         let result = format_title_group(&config, &events, now);

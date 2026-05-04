@@ -32,7 +32,14 @@ pub fn run() {
             }
             // 全ウィンドウを閉じてもアプリを終了しない（トレイアプリとして常駐）
             tauri::RunEvent::ExitRequested { api, .. } => {
-                api.prevent_exit();
+                let allow_exit = app_handle.state::<tray::AllowExit>();
+                if allow_exit.0.load(std::sync::atomic::Ordering::Relaxed) {
+                    allow_exit
+                        .0
+                        .store(false, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    api.prevent_exit();
+                }
             }
             // 設定ウィンドウの×ボタンは閉じるのではなく隠す
             tauri::RunEvent::WindowEvent {

@@ -32,12 +32,6 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0" --locked
-
-      - name: Build bundle
-        run: cargo tauri build
-
       - name: Prepare release metadata
         id: metadata
         env:
@@ -51,8 +45,44 @@ jobs:
           echo "tag_name=${VERSION_RAW}" >> "$GITHUB_OUTPUT"
           echo "version_no_v=${VERSION_NO_V}" >> "$GITHUB_OUTPUT"
 
+      - name: Sync bundle version
+        env:
+          VERSION_NO_V: ${{ steps.metadata.outputs.version_no_v }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = os.environ["VERSION_NO_V"]
+
+          cargo_toml = Path("Cargo.toml")
+          cargo_lines = cargo_toml.read_text().splitlines()
+          for index, line in enumerate(cargo_lines):
+              if line.strip() == '[package]':
+                  for package_index in range(index + 1, len(cargo_lines)):
+                      if cargo_lines[package_index].startswith('version = '):
+                          cargo_lines[package_index] = f'version = "{version}"'
+                          break
+                  break
+          cargo_toml.write_text('\n'.join(cargo_lines) + '\n')
+
+          tauri_conf = Path('tauri.conf.json')
+          config = json.loads(tauri_conf.read_text())
+          config['version'] = version
+          tauri_conf.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n')
+          PY
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0" --locked
+
+      - name: Build bundle
+        run: cargo tauri build
+
       - name: Locate DMG
         id: bundle
+        env:
+          VERSION_NO_V: ${{ steps.metadata.outputs.version_no_v }}
         run: |
           set -euo pipefail
 
@@ -62,7 +92,12 @@ jobs:
             exit 1
           fi
 
-          echo "dmg_file=$DMG_FILE" >> "$GITHUB_OUTPUT"
+          NORMALIZED_DMG="target/release/bundle/dmg/AuraCalendar_${VERSION_NO_V}_aarch64.dmg"
+          if [ "$DMG_FILE" != "$NORMALIZED_DMG" ]; then
+            cp "$DMG_FILE" "$NORMALIZED_DMG"
+          fi
+
+          echo "dmg_file=$NORMALIZED_DMG" >> "$GITHUB_OUTPUT"
 
       - name: Write release body
         env:
@@ -74,7 +109,7 @@ jobs:
           1. \`AuraCalendar_${VERSION_NO_V}_aarch64.dmg\`をダウンロード
           2. ダウンロードした\`dmg\`ファイルをダブルクリックして起動
           3. \`AuraCalendar.app\`を\`Application\`にドラッグ&ドロップ
-          ![](https://github.com/naoya25/aura-calendar/blob/main/screenshot/instoller.png)
+          ![](https://raw.githubusercontent.com/naoya25/aura-calendar/main/docs/images/installer.png)
 
           4. \`AuraCalendar.app\`を起動
           「\"AuraCalendar.app\"は壊れているため開けません...」という警告が出ます

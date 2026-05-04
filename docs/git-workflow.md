@@ -62,5 +62,6 @@ git branch -d release/vx.x.x
 ## 4. リリース自動化（GitHub Actions）
 
 - `release/*` ブランチのPRが `main` に **merge** された時、GitHub Actions が自動実行されます
+- リリース版数は `release/vx.x.x` のブランチ名から取り、CI 内で `Cargo.toml` と `tauri.conf.json` を同期します
 - 実行内容: DMG ビルド → GitHub Release 作成 → DMG を asset 添付
 - リリース本文にはインストール手順（`xattr -cr /Applications/AuraCalendar.app` を含む）を自動挿入します

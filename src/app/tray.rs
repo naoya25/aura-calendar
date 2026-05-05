@@ -258,22 +258,20 @@ fn build_schedule_menu_item(
     event: &CachedEvent,
     label: String,
 ) -> Option<Box<dyn IsMenuItem<tauri::Wry>>> {
+    // Use calendar emoji (stored per-calendar) as a label prefix. When there are
+    // no child actions, show a simple menu item prefixed with the emoji.
+    let emoji = if event.calendar_emoji.trim().is_empty() {
+        "⬛"
+    } else {
+        &event.calendar_emoji
+    };
+
     if event.actions.is_empty() {
-        let icon = calendar_dot_icon(&event.calendar_color);
-        if let Ok(item) = IconMenuItem::with_id(
-            app,
-            format!("event_{event_index}"),
-            label.clone(),
-            true,
-            icon,
-            None::<&str>,
-        ) {
-            return Some(Box::new(item));
-        }
+        let display_label = format!("{} {}", emoji, label);
         if let Ok(item) = MenuItem::with_id(
             app,
             format!("event_{event_index}"),
-            label,
+            display_label,
             true,
             None::<&str>,
         ) {
@@ -296,7 +294,8 @@ fn build_schedule_menu_item(
 
     let child_refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
         child_items.iter().map(|item| item.as_ref()).collect();
-    Submenu::with_items(app, label, true, &child_refs)
+    let display_label = format!("{} {}", emoji, label);
+    Submenu::with_items(app, display_label, true, &child_refs)
         .ok()
         .map(|submenu| Box::new(submenu) as Box<dyn IsMenuItem<tauri::Wry>>)
 }

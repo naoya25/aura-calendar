@@ -17,7 +17,7 @@ pub struct FetchResult {
 
 #[derive(Debug, Clone)]
 struct CalendarContext {
-    color: String,
+    emoji: String,
 }
 
 #[derive(Debug, Clone)]
@@ -116,10 +116,10 @@ fn event_is_within_schedule_window(
 
 fn resolved_calendar_context(index: usize, calendar: &CalendarConfig) -> CalendarContext {
     CalendarContext {
-        color: calendar
-            .color
+        emoji: calendar
+            .emoji
             .clone()
-            .unwrap_or_else(|| fallback_calendar_color(index, &calendar.name, &calendar.ical_url)),
+            .unwrap_or_else(|| fallback_calendar_emoji(index, &calendar.name, &calendar.ical_url)),
     }
 }
 
@@ -136,11 +136,8 @@ async fn fetch_calendar_body(
         .await
 }
 
-fn fallback_calendar_color(index: usize, name: &str, ical_url: &str) -> String {
-    const PALETTE: [&str; 10] = [
-        "#f44336", "#e91e63", "#9c27b0", "#673ab7", "#3f51b5", "#03a9f4", "#009688", "#4caf50",
-        "#ff9800", "#ff5722",
-    ];
+fn fallback_calendar_emoji(index: usize, name: &str, ical_url: &str) -> String {
+    const PALETTE: [&str; 10] = ["🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "⬛", "🟫", "🔵", "🟣"];
 
     if name.is_empty() && ical_url.is_empty() {
         return PALETTE[index % PALETTE.len()].to_string();
@@ -168,7 +165,7 @@ pub struct CachedEvent {
     pub start: DateTime<Utc>,
     pub end: Option<DateTime<Utc>>,
     pub title: String,
-    pub calendar_color: String,
+    pub calendar_emoji: String,
     pub actions: Vec<EventAction>,
 }
 
@@ -278,7 +275,7 @@ fn collect_relevant_events_for_calendar(
                         start,
                         end,
                         title,
-                        calendar_color: context.color.clone(),
+                        calendar_emoji: context.emoji.clone(),
                         actions,
                     });
                 }
@@ -389,7 +386,7 @@ fn expand_recurring_event(
             start: start_at,
             end: end_at,
             title: title.clone(),
-            calendar_color: context.color.clone(),
+            calendar_emoji: context.emoji.clone(),
             actions: actions.clone(),
         });
     }
@@ -1000,7 +997,7 @@ mod tests {
             start: now + Duration::minutes(30),
             end: Some(now + Duration::minutes(60)),
             title: "MTG".to_string(),
-            calendar_color: "#4caf50".to_string(),
+            calendar_emoji: "🟩".to_string(),
             actions: Vec::new(),
         }];
         let result = format_title_group(&config, &events, now);
@@ -1017,14 +1014,14 @@ mod tests {
                 start,
                 end: Some(start + Duration::hours(1)),
                 title: "MTG-A".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
                 actions: Vec::new(),
             },
             CachedEvent {
                 start,
                 end: Some(start + Duration::minutes(30)),
                 title: "MTG-B".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
                 actions: Vec::new(),
             },
         ];
@@ -1042,14 +1039,14 @@ mod tests {
                 start: now - Duration::hours(1),
                 end: Some(now + Duration::hours(1)),
                 title: "終日MTG".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
                 actions: Vec::new(),
             },
             CachedEvent {
                 start: now - Duration::minutes(10),
                 end: Some(now + Duration::minutes(20)),
                 title: "朝会".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
                 actions: Vec::new(),
             },
         ];

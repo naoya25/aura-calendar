@@ -14,6 +14,7 @@ use tokio::sync::broadcast;
 use crate::config::AppConfig;
 use crate::services::calendar::{fetch, render_title, CachedEvent};
 use crate::ui::icon::menu_bar_icon;
+use urlencoding::decode;
 
 use super::commands::{self, ConfigState, RefreshSignal};
 
@@ -282,7 +283,34 @@ fn build_schedule_menu_item(
     let mut child_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
     for (action_index, action) in event.actions.iter().enumerate() {
         let id = format!("event_{event_index}_action_{action_index}");
-        if let Ok(item) = MenuItem::with_id(app, id, action.label.clone(), true, None::<&str>) {
+        // Build a more informative display label: prefer a short service key
+        // followed by the inner value (URL or decoded map query).
+        let display_label = match action.label.as_str() {
+            "Google map" => {
+                // Try to extract the original place query from the maps URL's `query=` param
+                if let Some(pos) = action.target.find("query=") {
+                    let raw = &action.target[pos + "query=".len()..];
+                    // raw may include additional params; cut at & if present
+                    let end = raw.find('&').unwrap_or(raw.len());
+                    let enc = &raw[..end];
+                    match decode(enc) {
+                        Ok(decoded) => format!("map: {}", decoded),
+                        Err(_) => format!("map: {}", action.target),
+                    }
+                } else {
+                    format!("map: {}", action.target)
+                }
+            }
+            "Google Meet" => format!("meet: {}", action.target),
+            "ZOOM" => format!("zoom: {}", action.target),
+            other => {
+                // For hosts like `support.google.com` or generic labels,
+                // show `label: target` to reveal the inner value.
+                format!("{}: {}", other.to_lowercase(), action.target)
+            }
+        };
+
+        if let Ok(item) = MenuItem::with_id(app, id, display_label, true, None::<&str>) {
             child_items.push(Box::new(item));
         }
     }

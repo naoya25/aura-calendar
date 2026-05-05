@@ -2,6 +2,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
 };
+use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{Datelike, Duration, Local, Timelike, Utc};
 use tauri::image::Image;
@@ -30,6 +31,44 @@ pub struct StealthState {
 }
 
 pub struct CachedEvents(pub Mutex<Option<Vec<CachedEvent>>>);
+
+pub struct TrayRefreshGate(pub Arc<Mutex<Option<Instant>>>);
+
+fn pause_tray_refreshes(app: &tauri::AppHandle, duration: StdDuration) {
+    let gate_state = app.state::<TrayRefreshGate>();
+    let gate = Arc::clone(&gate_state.0);
+    let lock_result = gate.lock();
+    if let Ok(mut until) = lock_result {
+        *until = Some(Instant::now() + duration);
+    }
+}
+
+fn tray_refreshes_paused(app: &tauri::AppHandle) -> bool {
+    let gate_state = app.state::<TrayRefreshGate>();
+    let gate = Arc::clone(&gate_state.0);
+    let lock_result = gate.lock();
+    match lock_result {
+        Ok(mut until) => {
+            if let Some(deadline) = *until {
+                if Instant::now() < deadline {
+                    return true;
+                }
+            }
+            *until = None;
+            false
+        }
+        Err(_) => false,
+    }
+}
+
+fn resume_tray_refreshes(app: &tauri::AppHandle) {
+    let gate_state = app.state::<TrayRefreshGate>();
+    let gate = Arc::clone(&gate_state.0);
+    let lock_result = gate.lock();
+    if let Ok(mut until) = lock_result {
+        *until = None;
+    }
+}
 
 pub fn toggle_stealth(app: &tauri::AppHandle) {
     let stealth = app.state::<StealthState>();
@@ -72,6 +111,10 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
 
 /// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
+    if tray_refreshes_paused(app) {
+        return;
+    }
+
     let config = app.state::<ConfigState>();
     let days_to_show = config.0.read().map(|g| g.tray_days_to_show).unwrap_or(4);
 
@@ -182,6 +225,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         normal_title: Arc::clone(&normal_title),
     });
     app.manage(CachedEvents(Mutex::new(None)));
+    app.manage(TrayRefreshGate(Arc::new(Mutex::new(None))));
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     app.manage(ShutdownHandle(shutdown_tx.clone()));
@@ -205,8 +249,12 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     let app_handle_menu = app.handle().clone();
     app.on_menu_event(move |_, event| match event.id.as_ref() {
-        "preferences" => commands::open_settings_window(&app_handle_menu),
+        "preferences" => {
+            resume_tray_refreshes(&app_handle_menu);
+            commands::open_settings_window(&app_handle_menu)
+        }
         "quit" => {
+            resume_tray_refreshes(&app_handle_menu);
             let allow_exit = app_handle_menu.state::<AllowExit>();
             allow_exit.0.store(true, Ordering::Relaxed);
             app_handle_menu.exit(0);
@@ -222,6 +270,26 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .menu(&initial_menu)
         .show_menu_on_left_click(true)
         .build(app)?;
+
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let app_handle = app.handle().clone();
+        tray.on_tray_icon_event(move |_, event| {
+            if matches!(event, tauri::tray::TrayIconEvent::Click { .. }) {
+                let pause_for = app_handle
+                    .state::<ConfigState>()
+                    .0
+                    .read()
+                    .map(|config| {
+                        std::cmp::max(
+                            config.refresh_interval_seconds,
+                            config.display_interval_seconds,
+                        ) + 5
+                    })
+                    .unwrap_or(35);
+                pause_tray_refreshes(&app_handle, StdDuration::from_secs(pause_for));
+            }
+        });
+    }
 
     register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
         .unwrap_or_else(|e| eprintln!("failed to register stealth shortcut: {e}"));
@@ -293,7 +361,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                     *t = next_title.clone();
                 }
 
-                if !disp_hidden.load(Ordering::Relaxed) {
+                if !disp_hidden.load(Ordering::Relaxed) && !tray_refreshes_paused(&app_handle) {
                     if let Some(tray) = app_handle.tray_by_id("main-tray") {
                         let spaced = format!(" {next_title}");
                         if let Err(e) = tray.set_title(Some(spaced.as_str())) {

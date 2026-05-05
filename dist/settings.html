@@ -1189,7 +1189,7 @@ ${currentTemplate}
             showToast("カレンダー取得間隔は30秒以上にしてください", true);
             return;
           }
-          if (isNaN(displayInterval) || displayInterval < 5) {
+          if (isNaN(displayInterval) || displayInterval < 1) {
             showToast("表示更新間隔は5秒以上にしてください", true);
             return;
           }

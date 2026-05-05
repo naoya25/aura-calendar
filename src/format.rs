@@ -50,6 +50,8 @@ pub struct FormatContext {
     pub h: i64,
     pub hh: String,
     pub m: i64,
+    pub s: i64,
+    pub ss: String,
     pub mm: String,
     pub total_minutes: i64,
     pub title: String,
@@ -75,16 +77,21 @@ pub fn build_context(
 ) -> FormatContext {
     let seconds = (display_time - now).num_seconds().max(0);
     let total_minutes = (seconds + 59) / 60;
-    let d = total_minutes / (24 * 60);
-    let remaining = total_minutes - d * 24 * 60;
-    let h = remaining / 60;
-    let m = remaining % 60;
+
+    let d = seconds / (24 * 60 * 60);
+    let mut rem = seconds - d * 24 * 60 * 60;
+    let h = rem / 3600;
+    rem -= h * 3600;
+    let m = rem / 60;
+    let s = rem % 60;
 
     FormatContext {
         d,
         hh: format!("{h:02}"),
         h,
         mm: format!("{m:02}"),
+        s,
+        ss: format!("{s:02}"),
         m,
         total_minutes,
         title,
@@ -98,6 +105,8 @@ fn make_context(ctx: &FormatContext) -> minijinja::Value {
         d => ctx.d,
         h => ctx.h,
         hh => ctx.hh,
+        s => ctx.s,
+        ss => ctx.ss,
         m => ctx.m,
         mm => ctx.mm,
         total_minutes => ctx.total_minutes,
@@ -107,20 +116,33 @@ fn make_context(ctx: &FormatContext) -> minijinja::Value {
     }
 }
 
+fn create_env() -> Environment<'static> {
+    let mut env = Environment::new();
+    // 設定画面では複数行テンプレートの入力を許可するため、
+    // 制御構文由来の不要な改行・インデントを描画時に抑制する。
+    env.set_trim_blocks(true);
+    env.set_lstrip_blocks(true);
+    env
+}
+
+fn normalize_single_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn render(template: &str, ctx: FormatContext) -> String {
-    let env = Environment::new();
+    let env = create_env();
     match env.render_str(template, make_context(&ctx)) {
-        Ok(s) => s.trim().to_string(),
+        Ok(s) => normalize_single_line(&s),
         Err(e) => {
             eprintln!("format template error: {e}");
-            ctx.title
+            normalize_single_line(&ctx.title)
         }
     }
 }
 
 /// 設定画面のプレビュー用。サンプルデータでテンプレートを描画して返す。
 pub fn preview(template: &str) -> Result<String, String> {
-    let env = Environment::new();
+    let env = create_env();
     env.render_str(
         template,
         context! {
@@ -129,12 +151,70 @@ pub fn preview(template: &str) -> Result<String, String> {
             hh => "01",
             m => 30_i64,
             mm => "30",
+            s => 5_i64,
+            ss => "05",
             total_minutes => 90_i64,
             title => "チームMTG",
             active => false,
             count => 1_i64,
         },
     )
-    .map(|s| s.trim().to_string())
+    .map(|s| normalize_single_line(&s))
     .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn render_should_normalize_multiline_template_to_single_line() {
+        let template = r#"
+{% if active %}
+    now
+{% else %}
+    {% if d > 0 %}
+        {{ d }}:
+    {% endif %}
+
+    {% if d > 0 or h > 0 %}
+        {{ hh }}:
+    {% endif %}
+
+    {% if d > 0 or h > 0 or m > 0 %}
+        {{ mm }}
+    {% endif %}
+{% endif %}
+
+> {{ title }}
+{% if count > 1 %}
+    ({{ count }})
+{% endif %}
+"#;
+
+        let now = Utc::now();
+        let ctx = build_context(
+            "チームMTG".to_string(),
+            now + Duration::hours(1),
+            now,
+            false,
+            1,
+        );
+        let rendered = render(template, ctx);
+
+        assert!(!rendered.contains('\n'));
+        assert!(!rendered.contains('\r'));
+        assert!(rendered.contains("チームMTG"));
+    }
+
+    #[test]
+    fn preview_should_normalize_multiline_template_to_single_line() {
+        let template = "{% if d > 0 %}{{ d }}:{% endif %}\n{{ hh }}:{{ mm }}\n> {{ title }}";
+        let rendered = preview(template).expect("preview should succeed");
+
+        assert!(!rendered.contains('\n'));
+        assert!(!rendered.contains('\r'));
+        assert!(rendered.contains("チームMTG"));
+    }
 }

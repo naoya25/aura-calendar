@@ -35,7 +35,7 @@ pub fn save_config(
         return Err(format!("無効なショートカットキーです: {e}"));
     }
 
-    config.normalize_calendar_colors();
+    config.normalize_calendar_emojis();
     config.save().map_err(|e| e.to_string())?;
     match config_state.0.write() {
         Ok(mut guard) => {

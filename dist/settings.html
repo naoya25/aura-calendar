@@ -249,7 +249,7 @@
         height: 40px;
       }
 
-      .btn-color-picker {
+      .btn-emoji-picker {
         width: 40px;
         height: 40px;
         border-radius: 8px;
@@ -263,14 +263,14 @@
         flex-shrink: 0;
         position: relative;
       }
-      .btn-color-picker:hover {
+      .btn-emoji-picker:hover {
         border-color: var(--accent);
       }
-      .btn-color-picker:focus {
+      .btn-emoji-picker:focus {
         outline: none;
         box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
       }
-      .btn-color-picker::after {
+      .btn-emoji-picker::after {
         content: "";
         position: absolute;
         inset: 0;
@@ -285,7 +285,7 @@
         opacity: 0;
         pointer-events: none;
       }
-      .btn-color-picker[data-color=""]::after {
+      .btn-emoji-picker[data-emoji=""]::after {
         opacity: 0.15;
         color: var(--text-tertiary);
       }
@@ -419,7 +419,8 @@
         background: var(--surface-secondary);
         color: var(--text);
         resize: vertical;
-        min-height: 56px;
+        /* Increased min-height ~3x for a larger editing area */
+        min-height: 168px;
         outline: none;
         transition:
           border-color 0.15s,
@@ -730,7 +731,7 @@
         <textarea
           class="format-template"
           id="normal-format"
-          rows="2"
+          rows="6"
           spellcheck="false"
         ></textarea>
         <div
@@ -916,32 +917,31 @@
         }, 2500);
       }
 
-      const COLOR_PALETTE = [
-        "#f44336",
-        "#e91e63",
-        "#9c27b0",
-        "#673ab7",
-        "#3f51b5",
-        "#03a9f4",
-        "#009688",
-        "#4caf50",
-        "#ff9800",
-        "#ff5722",
+      const EMOJI_PALETTE = [
+        "🟥",
+        "🟧",
+        "🟨",
+        "🟩",
+        "🟦",
+        "🟪",
+        "⬛",
+        "🟫",
+        "🔵",
+        "🟣",
       ];
 
-      function assignedCalendarColor(index, name, icalUrl) {
-        // Rust側と同じロジック: 色がない場合は自動配色
+      function assignedCalendarEmoji(index, name, icalUrl) {
+        // Rust側と同じロジック: 絵文字がない場合は自動割当
         if (!name && !icalUrl) {
-          return COLOR_PALETTE[index % COLOR_PALETTE.length];
+          return EMOJI_PALETTE[index % EMOJI_PALETTE.length];
         }
-        // FNV-1a hash を使用
         let hash = 0xcbf29ce484222325;
         const text = name + icalUrl;
         for (let i = 0; i < text.length; i++) {
           hash ^= text.charCodeAt(i);
           hash = (hash * 0x100000001b3) >>> 0;
         }
-        return COLOR_PALETTE[(hash >>> 0) % COLOR_PALETTE.length];
+        return EMOJI_PALETTE[(hash >>> 0) % EMOJI_PALETTE.length];
       }
 
       function renderCalendars(calendars) {
@@ -964,81 +964,72 @@
           item.innerHTML = `
             <div class="calendar-item-number">${i + 1}</div>
             <div class="calendar-item-fields">
-              <button type="button" class="btn-color-picker" data-index="${i}" data-color="" title="色を選択"></button>
+              <button type="button" class="btn-emoji-picker" data-index="${i}" data-emoji="" title="絵文字を選択"></button>
               <input type="text" placeholder="名前" value="${escapeAttr(cal.name)}"
                      data-index="${i}" data-field="name" />
               <input type="url" placeholder="iCal URL (https://...)" value="${escapeAttr(cal.ical_url)}"
                      data-index="${i}" data-field="ical_url" />
-              <input type="hidden" value="${escapeAttr(cal.color ?? "")}" data-index="${i}" data-field="color" />
+              <input type="hidden" value="${escapeAttr(cal.emoji ?? "")}" data-index="${i}" data-field="emoji" />
             </div>
             <button class="btn-remove" title="削除" data-index="${i}">−</button>`;
 
-          // 色値を hidden field から取得して button に適用
-          // 色が空の場合は自動配色を生成
-          const colorValue =
-            cal.color || assignedCalendarColor(i, cal.name, cal.ical_url);
-          const picker = item.querySelector(".btn-color-picker");
-          picker.setAttribute("data-color", cal.color || "");
-          picker.style.backgroundColor = colorValue;
+          // 絵文字値を hidden field から取得して button に適用
+          // 絵文字が空の場合は自動割当を生成
+          const emojiValue =
+            cal.emoji || assignedCalendarEmoji(i, cal.name, cal.ical_url);
+          const picker = item.querySelector(".btn-emoji-picker");
+          picker.setAttribute("data-emoji", cal.emoji || "");
+          picker.textContent = emojiValue;
 
           item
             .querySelector(".btn-remove")
             .addEventListener("click", () => removeCalendar(i));
           item
-            .querySelector(".btn-color-picker")
-            .addEventListener("click", (e) => showColorPicker(e, i));
+            .querySelector(".btn-emoji-picker")
+            .addEventListener("click", (e) => showEmojiPicker(e, i));
           list.appendChild(item);
         });
       }
 
-      function showColorPicker(event, calendarIndex) {
+      function showEmojiPicker(event, calendarIndex) {
         event.preventDefault();
         const modal = document.createElement("div");
         modal.className = "color-picker-modal";
         modal.innerHTML = `
           <div class="color-picker-popup">
-            <div class="color-picker-header">色を選択</div>
+            <div class="color-picker-header">絵文字を選択</div>
             <div class="color-palette">
-              ${COLOR_PALETTE.map(
-                (color) => `
-                <button type="button" class="color-option" data-color="${color}" title="${color}"></button>
+              ${EMOJI_PALETTE.map(
+                (emoji) => `
+                <button type="button" class="color-option" data-emoji="${emoji}" title="${emoji}">${emoji}</button>
               `,
               ).join("")}
-              <button type="button" class="color-option color-none" data-color="" title="未設定"></button>
+              <button type="button" class="color-option color-none" data-emoji="" title="未設定">—</button>
             </div>
           </div>
         `;
         document.body.appendChild(modal);
 
-        // DOM に追加後、JavaScript で直接色を set
-        const colorButtons = modal.querySelectorAll(".color-option");
-        colorButtons.forEach((btn, idx) => {
-          if (idx < COLOR_PALETTE.length) {
-            btn.style.backgroundColor = COLOR_PALETTE[idx];
-          }
-        });
-
-        const updateColor = (color) => {
+        const updateEmoji = (emoji) => {
           const picker = document.querySelector(
-            `.btn-color-picker[data-index="${calendarIndex}"]`,
+            `.btn-emoji-picker[data-index="${calendarIndex}"]`,
           );
           const hidden = picker.parentElement.querySelector(
-            `input[data-field="color"][data-index="${calendarIndex}"]`,
+            `input[data-field="emoji"][data-index="${calendarIndex}"]`,
           );
-          // 直接 backgroundColor を設定
-          if (color) {
-            picker.style.backgroundColor = color;
+          if (emoji) {
+            picker.textContent = emoji;
           } else {
-            picker.style.backgroundColor = "";
+            picker.textContent = "";
           }
-          picker.setAttribute("data-color", color);
-          if (hidden) hidden.value = color;
+          picker.setAttribute("data-emoji", emoji);
+          if (hidden) hidden.value = emoji;
           modal.remove();
         };
 
         modal.querySelectorAll(".color-option").forEach((btn) => {
           btn.addEventListener("click", () => {
-            updateColor(btn.getAttribute("data-color"));
+            updateEmoji(btn.getAttribute("data-emoji"));
           });
         });
 
@@ -1061,8 +1052,8 @@
               item
                 .querySelector("input[data-field='ical_url']")
                 ?.value.trim() ?? "",
-            color:
-              item.querySelector("input[data-field='color']")?.value.trim() ??
+            emoji:
+              item.querySelector("input[data-field='emoji']")?.value.trim() ??
               "",
           }),
         );
@@ -1078,7 +1069,7 @@
         .getElementById("btn-add-calendar")
         .addEventListener("click", () => {
           const calendars = getCalendarsFromDOM();
-          calendars.push({ name: "", ical_url: "", color: "" });
+          calendars.push({ name: "", ical_url: "", emoji: "" });
           renderCalendars(calendars);
           const items = document.querySelectorAll(".calendar-item");
           items[items.length - 1]?.querySelector("input")?.focus();
@@ -1188,7 +1179,7 @@ ${currentTemplate}
             showToast("カレンダー取得間隔は30秒以上にしてください", true);
             return;
           }
-          if (isNaN(displayInterval) || displayInterval < 5) {
+          if (isNaN(displayInterval) || displayInterval < 1) {
             showToast("表示更新間隔は5秒以上にしてください", true);
             return;
           }

@@ -3,6 +3,7 @@ use rrule::{RRule, RRuleSet, Tz};
 use std::collections::HashSet;
 use std::str::FromStr;
 use thiserror::Error;
+use urlencoding::encode;
 
 use crate::config::{AppConfig, CalendarConfig};
 
@@ -16,7 +17,13 @@ pub struct FetchResult {
 
 #[derive(Debug, Clone)]
 struct CalendarContext {
-    color: String,
+    emoji: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct EventAction {
+    pub label: String,
+    pub target: String,
 }
 
 /// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと設定日数分の全予定を返す（長周期で呼ぶ）。
@@ -109,10 +116,10 @@ fn event_is_within_schedule_window(
 
 fn resolved_calendar_context(index: usize, calendar: &CalendarConfig) -> CalendarContext {
     CalendarContext {
-        color: calendar
-            .color
+        emoji: calendar
+            .emoji
             .clone()
-            .unwrap_or_else(|| fallback_calendar_color(index, &calendar.name, &calendar.ical_url)),
+            .unwrap_or_else(|| fallback_calendar_emoji(index, &calendar.name, &calendar.ical_url)),
     }
 }
 
@@ -129,11 +136,8 @@ async fn fetch_calendar_body(
         .await
 }
 
-fn fallback_calendar_color(index: usize, name: &str, ical_url: &str) -> String {
-    const PALETTE: [&str; 10] = [
-        "#f44336", "#e91e63", "#9c27b0", "#673ab7", "#3f51b5", "#03a9f4", "#009688", "#4caf50",
-        "#ff9800", "#ff5722",
-    ];
+fn fallback_calendar_emoji(index: usize, name: &str, ical_url: &str) -> String {
+    const PALETTE: [&str; 10] = ["🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "⬛", "🟫", "🔵", "🟣"];
 
     if name.is_empty() && ical_url.is_empty() {
         return PALETTE[index % PALETTE.len()].to_string();
@@ -161,7 +165,8 @@ pub struct CachedEvent {
     pub start: DateTime<Utc>,
     pub end: Option<DateTime<Utc>>,
     pub title: String,
-    pub calendar_color: String,
+    pub calendar_emoji: String,
+    pub actions: Vec<EventAction>,
 }
 
 impl CachedEvent {
@@ -181,7 +186,7 @@ impl CachedEvent {
 #[cfg(test)]
 fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
     let context = CalendarContext {
-        color: "#9e9e9e".to_string(),
+        emoji: "#9e9e9e".to_string(),
     };
     parse_concurrent_events_for_calendar(ics, now, &context)
 }
@@ -224,6 +229,9 @@ fn collect_relevant_events_for_calendar(
     let mut current_title: Option<String> = None;
     let mut current_rrule: Option<String> = None;
     let mut current_exdates: Vec<DateTime<Utc>> = Vec::new();
+    let mut current_location: Option<String> = None;
+    let mut current_description: Option<String> = None;
+    let mut current_urls: Vec<String> = Vec::new();
     let mut events = Vec::new();
 
     for line in unfold_ical_lines(ics) {
@@ -234,6 +242,9 @@ fn collect_relevant_events_for_calendar(
             current_title = None;
             current_rrule = None;
             current_exdates.clear();
+            current_location = None;
+            current_description = None;
+            current_urls.clear();
         } else if line.starts_with("END:VEVENT") {
             if let Some(start) = current_start.take() {
                 let end = current_end
@@ -243,6 +254,11 @@ fn collect_relevant_events_for_calendar(
                     .take()
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| "予定あり".to_string());
+                let actions = collect_event_actions(
+                    current_location.as_deref(),
+                    current_description.as_deref(),
+                    &current_urls,
+                );
                 if let Some(rrule) = current_rrule.take() {
                     events.extend(expand_recurring_event(
                         start,
@@ -252,13 +268,15 @@ fn collect_relevant_events_for_calendar(
                         &current_exdates,
                         now,
                         context,
+                        actions,
                     ));
                 } else {
                     events.push(CachedEvent {
                         start,
                         end,
                         title,
-                        calendar_color: context.color.clone(),
+                        calendar_emoji: context.emoji.clone(),
+                        actions,
                     });
                 }
             }
@@ -286,6 +304,31 @@ fn collect_relevant_events_for_calendar(
                         .filter_map(|value| parse_datetime(value.trim())),
                 );
             }
+        } else if line.starts_with("LOCATION") {
+            if let Some((_, location)) = line.split_once(':') {
+                current_location = Some(unescape_ical_text(location));
+            }
+        } else if line.starts_with("DESCRIPTION") {
+            if let Some((_, description)) = line.split_once(':') {
+                let description = unescape_ical_text(description);
+                current_description = Some(match current_description.take() {
+                    Some(mut existing) => {
+                        if !existing.is_empty() {
+                            existing.push('\n');
+                        }
+                        existing.push_str(&description);
+                        existing
+                    }
+                    None => description,
+                });
+            }
+        } else if line.starts_with("URL") {
+            if let Some((_, raw_value)) = line.split_once(':') {
+                let value = unescape_ical_text(raw_value);
+                if !value.trim().is_empty() {
+                    current_urls.push(value);
+                }
+            }
         } else if line.starts_with("SUMMARY") {
             if let Some((_, summary)) = line.split_once(':') {
                 current_title = Some(summary.to_string());
@@ -299,6 +342,7 @@ fn collect_relevant_events_for_calendar(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_recurring_event(
     start: DateTime<Utc>,
     end: Option<DateTime<Utc>>,
@@ -307,6 +351,7 @@ fn expand_recurring_event(
     exdates: &[DateTime<Utc>],
     now: DateTime<Utc>,
     context: &CalendarContext,
+    actions: Vec<EventAction>,
 ) -> Vec<CachedEvent> {
     let start_tz = to_tz_datetime(start);
     let until = to_tz_datetime(now + Duration::days(30));
@@ -342,7 +387,8 @@ fn expand_recurring_event(
             start: start_at,
             end: end_at,
             title: title.clone(),
-            calendar_color: context.color.clone(),
+            calendar_emoji: context.emoji.clone(),
+            actions: actions.clone(),
         });
     }
 
@@ -395,6 +441,149 @@ fn to_tz_datetime(value: DateTime<Utc>) -> chrono::DateTime<Tz> {
 
 fn to_utc_datetime(value: chrono::DateTime<Tz>) -> DateTime<Utc> {
     value.with_timezone(&Utc)
+}
+
+fn collect_event_actions(
+    location: Option<&str>,
+    description: Option<&str>,
+    urls: &[String],
+) -> Vec<EventAction> {
+    let mut actions = Vec::new();
+    let mut seen_targets = HashSet::new();
+
+    for url in urls {
+        push_url_action(&mut actions, &mut seen_targets, url);
+    }
+
+    if let Some(description) = description {
+        for url in extract_urls(description) {
+            push_url_action(&mut actions, &mut seen_targets, &url);
+        }
+    }
+
+    if let Some(location) = location {
+        for url in extract_urls(location) {
+            push_url_action(&mut actions, &mut seen_targets, &url);
+        }
+
+        if !location.trim().is_empty() {
+            let map_target = google_map_search_url(location);
+            if seen_targets.insert(map_target.clone()) {
+                actions.push(EventAction {
+                    label: "Google map".to_string(),
+                    target: map_target,
+                });
+            }
+        }
+    }
+
+    actions
+}
+
+fn push_url_action(actions: &mut Vec<EventAction>, seen_targets: &mut HashSet<String>, url: &str) {
+    let normalized = normalize_external_url(url);
+    if normalized.is_empty() || !seen_targets.insert(normalized.clone()) {
+        return;
+    }
+
+    actions.push(EventAction {
+        label: classify_url_label(&normalized),
+        target: normalized,
+    });
+}
+
+fn normalize_external_url(url: &str) -> String {
+    let trimmed = url
+        .trim()
+        .trim_matches(|c: char| matches!(c, '.' | ',' | ';' | ')' | ']' | '}' | '>' | '"' | '\''));
+
+    if let Some(rest) = trimmed.strip_prefix("webcal://") {
+        format!("https://{rest}")
+    } else if let Some(rest) = trimmed.strip_prefix("webcals://") {
+        format!("https://{rest}")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn classify_url_label(url: &str) -> String {
+    let lower = url.to_lowercase();
+    if lower.contains("zoom.us") || lower.contains("zoom.com") {
+        "ZOOM".to_string()
+    } else if lower.contains("meet.google.com") {
+        "Google Meet".to_string()
+    } else if lower.contains("google.com/maps") || lower.contains("maps.app.goo.gl") {
+        "Google map".to_string()
+    } else if lower.contains("teams.microsoft.com") {
+        "Teams".to_string()
+    } else if lower.contains("webex.com") {
+        "Webex".to_string()
+    } else if let Some(host) = extract_host(url) {
+        host
+    } else {
+        "URL".to_string()
+    }
+}
+
+fn extract_host(url: &str) -> Option<String> {
+    let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let host = after_scheme
+        .split(|c| ['/', '?', '#'].contains(&c))
+        .next()
+        .unwrap_or("")
+        .trim_start_matches("www.");
+
+    (!host.is_empty()).then(|| host.to_string())
+}
+
+fn google_map_search_url(location: &str) -> String {
+    format!(
+        "https://www.google.com/maps/search/?api=1&query={}",
+        encode(location.trim())
+    )
+}
+
+fn extract_urls(text: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let lower = text.to_lowercase();
+    let mut search_start = 0;
+
+    while search_start < lower.len() {
+        let http_pos = lower[search_start..].find("http://");
+        let https_pos = lower[search_start..].find("https://");
+        let Some(relative_pos) = (match (http_pos, https_pos) {
+            (None, None) => None,
+            (Some(http), None) => Some(http),
+            (None, Some(https)) => Some(https),
+            (Some(http), Some(https)) => Some(http.min(https)),
+        }) else {
+            break;
+        };
+
+        let start = search_start + relative_pos;
+        let slice = &text[start..];
+        let end = slice
+            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\''))
+            .unwrap_or(slice.len());
+        let url = slice[..end]
+            .trim_matches(|c: char| matches!(c, '.' | ',' | ';' | ')' | ']' | '}'))
+            .to_string();
+        if !url.is_empty() {
+            urls.push(url);
+        }
+        search_start = start + end.max(1);
+    }
+
+    urls
+}
+
+fn unescape_ical_text(value: &str) -> String {
+    value
+        .replace("\\n", "\n")
+        .replace("\\N", "\n")
+        .replace("\\,", ",")
+        .replace("\\;", ";")
+        .replace("\\\\", "\\")
 }
 
 fn unfold_ical_lines(ics: &str) -> Vec<String> {
@@ -606,6 +795,7 @@ mod tests {
         ));
         let event = parse_next_event(&ics, fixed_now()).unwrap();
         assert_eq!(event.title, "Team Meeting");
+        assert!(event.actions.is_empty());
         assert_eq!(
             event.start,
             Utc.with_ymd_and_hms(2026, 5, 1, 15, 0, 0).unwrap()
@@ -633,6 +823,7 @@ mod tests {
         ));
         let event = parse_next_event(&ics, fixed_now()).unwrap();
         assert_eq!(event.title, "Active Meeting");
+        assert!(event.actions.is_empty());
     }
 
     #[test]
@@ -645,6 +836,7 @@ mod tests {
         );
         let event = parse_next_event(&make_ics(&events), fixed_now()).unwrap();
         assert_eq!(event.title, "Earlier");
+        assert!(event.actions.is_empty());
     }
 
     #[test]
@@ -652,6 +844,7 @@ mod tests {
         let ics = make_ics(&make_event("20260501T150000Z", "20260501T160000Z", ""));
         let event = parse_next_event(&ics, fixed_now()).unwrap();
         assert_eq!(event.title, "予定あり");
+        assert!(event.actions.is_empty());
     }
 
     #[test]
@@ -663,6 +856,23 @@ mod tests {
         let event = parse_next_event(&ics, fixed_now());
         assert!(event.is_some());
         assert_eq!(event.unwrap().title, "All Day");
+    }
+
+    #[test]
+    fn parse_next_event_extracts_url_and_map_actions() {
+        let ics = make_ics(
+            "BEGIN:VEVENT\r\nDTSTART:20260501T150000Z\r\nDTEND:20260501T160000Z\r\nSUMMARY:Demo\r\nLOCATION:東京都渋谷区神南1-19-11\r\nDESCRIPTION:Join at https://zoom.us/j/123456789 and https://meet.google.com/abc-defg-hij\r\nEND:VEVENT\r\n",
+        );
+        let event = parse_next_event(&ics, fixed_now()).unwrap();
+        let labels: Vec<String> = event
+            .actions
+            .iter()
+            .map(|action| action.label.clone())
+            .collect();
+        assert_eq!(labels, vec!["ZOOM", "Google Meet", "Google map"]);
+        assert!(event.actions[2]
+            .target
+            .starts_with("https://www.google.com/maps/search/?api=1&query="));
     }
 
     #[test]
@@ -788,7 +998,8 @@ mod tests {
             start: now + Duration::minutes(30),
             end: Some(now + Duration::minutes(60)),
             title: "MTG".to_string(),
-            calendar_color: "#4caf50".to_string(),
+            calendar_emoji: "🟩".to_string(),
+            actions: Vec::new(),
         }];
         let result = format_title_group(&config, &events, now);
         assert_eq!(result, "30m|MTG");
@@ -804,13 +1015,15 @@ mod tests {
                 start,
                 end: Some(start + Duration::hours(1)),
                 title: "MTG-A".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
+                actions: Vec::new(),
             },
             CachedEvent {
                 start,
                 end: Some(start + Duration::minutes(30)),
                 title: "MTG-B".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
+                actions: Vec::new(),
             },
         ];
         let result = format_title_group(&config, &events, now);
@@ -827,13 +1040,15 @@ mod tests {
                 start: now - Duration::hours(1),
                 end: Some(now + Duration::hours(1)),
                 title: "終日MTG".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
+                actions: Vec::new(),
             },
             CachedEvent {
                 start: now - Duration::minutes(10),
                 end: Some(now + Duration::minutes(20)),
                 title: "朝会".to_string(),
-                calendar_color: "#4caf50".to_string(),
+                calendar_emoji: "🟩".to_string(),
+                actions: Vec::new(),
             },
         ];
         let result = format_title_group(&config, &events, now);

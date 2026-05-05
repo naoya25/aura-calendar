@@ -81,7 +81,7 @@ pub fn build_context(
     let d = seconds / (24 * 60 * 60);
     let mut rem = seconds - d * 24 * 60 * 60;
     let h = rem / 3600;
-    rem = rem - h * 3600;
+    rem -= h * 3600;
     let m = rem / 60;
     let s = rem % 60;
 

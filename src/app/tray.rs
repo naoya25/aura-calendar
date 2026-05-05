@@ -350,13 +350,13 @@ fn calendar_dot_icon(color: &str) -> Option<Image<'static>> {
     let size = 12usize;
     let mut rgba = vec![0u8; size * size * 4];
     let center = (size as f32 - 1.0) / 2.0;
-    let radius = 4.6_f32;
+    let half_side = 3.2_f32;
 
     for y in 0..size {
         for x in 0..size {
             let dx = x as f32 - center;
             let dy = y as f32 - center;
-            if dx * dx + dy * dy <= radius * radius {
+            if dx.abs() <= half_side && dy.abs() <= half_side {
                 let idx = (y * size + x) * 4;
                 rgba[idx] = red;
                 rgba[idx + 1] = green;

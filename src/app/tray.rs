@@ -41,10 +41,7 @@ fn is_tray_render_locked(app: &tauri::AppHandle) -> bool {
         Err(_) => return false,
     };
 
-    match *lock_until {
-        Some(_) => true,
-        None => false,
-    }
+    (*lock_until).is_some()
 }
 
 fn lock_tray_render(app: &tauri::AppHandle) {
@@ -74,8 +71,7 @@ fn store_pending_schedule(app: &tauri::AppHandle, schedule: Vec<CachedEvent>) {
 fn take_pending_schedule(app: &tauri::AppHandle) -> Option<Vec<CachedEvent>> {
     let state = app.state::<TrayPresentationState>();
     let lock_result = state.pending_schedule.lock();
-    let taken = lock_result.ok().and_then(|mut pending| pending.take());
-    taken
+    lock_result.ok().and_then(|mut pending| pending.take())
 }
 
 fn current_tray_title(app: &tauri::AppHandle) -> String {

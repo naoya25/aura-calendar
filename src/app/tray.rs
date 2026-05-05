@@ -70,21 +70,24 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
     }
 }
 
-/// 3日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
+/// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
+    let config = app.state::<ConfigState>();
+    let days_to_show = config.0.read().map(|g| g.tray_days_to_show).unwrap_or(4);
+
     let now_local = Local::now();
     let today = now_local.date_naive();
     let weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
     let mut all_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
-    for day_offset in 0..3 {
+    for day_offset in 0..days_to_show {
         if day_offset > 0 {
             if let Ok(sep) = PredefinedMenuItem::separator(app) {
                 all_items.push(Box::new(sep));
             }
         }
 
-        let date = today + Duration::days(day_offset);
+        let date = today + Duration::days(day_offset as i64);
         let label = if date == today {
             "Today".to_string()
         } else {
@@ -347,13 +350,13 @@ fn calendar_dot_icon(color: &str) -> Option<Image<'static>> {
     let size = 12usize;
     let mut rgba = vec![0u8; size * size * 4];
     let center = (size as f32 - 1.0) / 2.0;
-    let radius = 4.6_f32;
+    let half_side = 3.2_f32;
 
     for y in 0..size {
         for x in 0..size {
             let dx = x as f32 - center;
             let dy = y as f32 - center;
-            if dx * dx + dy * dy <= radius * radius {
+            if dx.abs() <= half_side && dy.abs() <= half_side {
                 let idx = (y * size + x) * 4;
                 rgba[idx] = red;
                 rgba[idx + 1] = green;

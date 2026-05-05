@@ -10,6 +10,9 @@ const DEFAULT_REFRESH_INTERVAL_SECONDS: u64 = 300;
 const MIN_REFRESH_INTERVAL_SECONDS: u64 = 30;
 const DEFAULT_DISPLAY_INTERVAL_SECONDS: u64 = 30;
 const MIN_DISPLAY_INTERVAL_SECONDS: u64 = 5;
+const DEFAULT_TRAY_DAYS_TO_SHOW: u64 = 4;
+const MIN_TRAY_DAYS_TO_SHOW: u64 = 1;
+const MAX_TRAY_DAYS_TO_SHOW: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
@@ -20,6 +23,8 @@ pub struct AppConfig {
     pub display_interval_seconds: u64,
     #[serde(default = "default_stealth_shortcut")]
     pub stealth_shortcut: String,
+    #[serde(default = "default_tray_days_to_show")]
+    pub tray_days_to_show: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -45,6 +50,7 @@ impl Default for AppConfig {
             refresh_interval_seconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
             display_interval_seconds: DEFAULT_DISPLAY_INTERVAL_SECONDS,
             stealth_shortcut: default_stealth_shortcut(),
+            tray_days_to_show: DEFAULT_TRAY_DAYS_TO_SHOW,
         }
     }
 }
@@ -139,6 +145,8 @@ struct RawAppConfig {
     display_interval_seconds: u64,
     #[serde(default = "default_stealth_shortcut")]
     stealth_shortcut: String,
+    #[serde(default = "default_tray_days_to_show")]
+    tray_days_to_show: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -206,6 +214,15 @@ impl From<RawAppConfig> for LoadedConfig {
                 raw.display_interval_seconds
             };
 
+        let tray_days_to_show = if raw.tray_days_to_show < MIN_TRAY_DAYS_TO_SHOW
+            || raw.tray_days_to_show > MAX_TRAY_DAYS_TO_SHOW
+        {
+            needs_normalization = true;
+            DEFAULT_TRAY_DAYS_TO_SHOW
+        } else {
+            raw.tray_days_to_show
+        };
+
         Self {
             config: AppConfig {
                 calendars,
@@ -213,6 +230,7 @@ impl From<RawAppConfig> for LoadedConfig {
                 refresh_interval_seconds,
                 display_interval_seconds,
                 stealth_shortcut: raw.stealth_shortcut,
+                tray_days_to_show,
             },
             needs_normalization,
         }
@@ -253,6 +271,10 @@ fn default_display_interval_seconds() -> u64 {
 
 fn default_stealth_shortcut() -> String {
     "ctrl+a".to_string()
+}
+
+fn default_tray_days_to_show() -> u64 {
+    DEFAULT_TRAY_DAYS_TO_SHOW
 }
 
 #[derive(Debug, Error)]

@@ -2,11 +2,12 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
 };
+use std::time::Instant;
 
 use chrono::{Datelike, Duration, Local, Timelike, Utc};
 use tauri::image::Image;
 use tauri::menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::broadcast;
@@ -17,19 +18,99 @@ use crate::ui::icon::menu_bar_icon;
 
 use super::commands::{self, ConfigState, RefreshSignal};
 
-const FALLBACK_NO_CALENDAR_TITLE: &str = "Aura: no calendar";
-const FALLBACK_CALENDAR_ERROR_TITLE: &str = "Aura: calendar error";
-
 pub struct ShutdownHandle(pub broadcast::Sender<()>);
 
 pub struct AllowExit(pub Arc<AtomicBool>);
 
 pub struct StealthState {
     pub is_hidden: Arc<AtomicBool>,
-    pub normal_title: Arc<Mutex<String>>,
+}
+
+pub struct TrayPresentationState {
+    pub render_lock_until: Mutex<Option<Instant>>,
+    pub pending_schedule: Mutex<Option<Vec<CachedEvent>>>,
 }
 
 pub struct CachedEvents(pub Mutex<Option<Vec<CachedEvent>>>);
+
+fn is_tray_render_locked(app: &tauri::AppHandle) -> bool {
+    let state = app.state::<TrayPresentationState>();
+    let lock_result = state.render_lock_until.lock();
+    let lock_until = match lock_result {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+
+    (*lock_until).is_some()
+}
+
+fn lock_tray_render(app: &tauri::AppHandle) {
+    let state = app.state::<TrayPresentationState>();
+    let lock_result = state.render_lock_until.lock();
+    if let Ok(mut lock_until) = lock_result {
+        *lock_until = Some(Instant::now());
+    }
+}
+
+fn clear_tray_render_lock(app: &tauri::AppHandle) {
+    let state = app.state::<TrayPresentationState>();
+    let lock_result = state.render_lock_until.lock();
+    if let Ok(mut lock_until) = lock_result {
+        *lock_until = None;
+    }
+}
+
+fn store_pending_schedule(app: &tauri::AppHandle, schedule: Vec<CachedEvent>) {
+    let state = app.state::<TrayPresentationState>();
+    let lock_result = state.pending_schedule.lock();
+    if let Ok(mut pending_schedule) = lock_result {
+        *pending_schedule = Some(schedule);
+    }
+}
+
+fn take_pending_schedule(app: &tauri::AppHandle) -> Option<Vec<CachedEvent>> {
+    let state = app.state::<TrayPresentationState>();
+    let lock_result = state.pending_schedule.lock();
+    lock_result.ok().and_then(|mut pending| pending.take())
+}
+
+fn current_tray_title(app: &tauri::AppHandle) -> String {
+    let config = app.state::<ConfigState>();
+    let config = config.0.read().map(|g| g.clone()).unwrap_or_default();
+    let now = Utc::now();
+    let events = app
+        .state::<CachedEvents>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+
+    match events {
+        Some(ref evts) => render_title(&config, evts, now),
+        None => config.normal_title(),
+    }
+}
+
+fn refresh_tray_title(app: &tauri::AppHandle) {
+    let stealth = app.state::<StealthState>();
+    if stealth.is_hidden.load(Ordering::Relaxed) {
+        return;
+    }
+
+    let title = current_tray_title(app);
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let spaced = format!(" {title}");
+        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
+            eprintln!("failed to refresh tray title: {e}");
+        }
+    }
+}
+
+fn apply_pending_tray_menu(app: &tauri::AppHandle) {
+    if let Some(schedule) = take_pending_schedule(app) {
+        rebuild_tray_menu(app, &schedule);
+    }
+}
 
 pub fn toggle_stealth(app: &tauri::AppHandle) {
     let stealth = app.state::<StealthState>();
@@ -43,11 +124,7 @@ pub fn toggle_stealth(app: &tauri::AppHandle) {
             .map(|g| g.stealth_title().to_string())
             .unwrap_or_else(|_| "***".to_string())
     } else {
-        stealth
-            .normal_title
-            .lock()
-            .map(|v| v.clone())
-            .unwrap_or_else(|_| FALLBACK_CALENDAR_ERROR_TITLE.to_string())
+        current_tray_title(app)
     };
 
     if let Some(tray) = app.tray_by_id("main-tray") {
@@ -72,6 +149,12 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
 
 /// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
+    // If rendering is locked (tray likely open), defer setting the menu and store
+    // the schedule as pending to avoid calling `set_menu` while the OS menu is open.
+    if is_tray_render_locked(app) {
+        store_pending_schedule(app, schedule.to_vec());
+        return;
+    }
     let config = app.state::<ConfigState>();
     let days_to_show = config.0.read().map(|g| g.tray_days_to_show).unwrap_or(4);
 
@@ -175,11 +258,13 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(RefreshSignal(Arc::clone(&refresh_notify)));
 
     let is_hidden = Arc::new(AtomicBool::new(false));
-    let normal_title = Arc::new(Mutex::new(config.normal_title()));
 
     app.manage(StealthState {
         is_hidden: Arc::clone(&is_hidden),
-        normal_title: Arc::clone(&normal_title),
+    });
+    app.manage(TrayPresentationState {
+        render_lock_until: Mutex::new(None),
+        pending_schedule: Mutex::new(None),
     });
     app.manage(CachedEvents(Mutex::new(None)));
 
@@ -198,20 +283,27 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
-    let initial_title = normal_title
-        .lock()
-        .map(|v| v.clone())
-        .unwrap_or_else(|_| FALLBACK_NO_CALENDAR_TITLE.to_string());
+    let initial_title = config.normal_title();
 
     let app_handle_menu = app.handle().clone();
+    let app_handle_tray = app.handle().clone();
     app.on_menu_event(move |_, event| match event.id.as_ref() {
-        "preferences" => commands::open_settings_window(&app_handle_menu),
+        "preferences" => {
+            clear_tray_render_lock(&app_handle_menu);
+            apply_pending_tray_menu(&app_handle_menu);
+            refresh_tray_title(&app_handle_menu);
+            commands::open_settings_window(&app_handle_menu)
+        }
         "quit" => {
             let allow_exit = app_handle_menu.state::<AllowExit>();
             allow_exit.0.store(true, Ordering::Relaxed);
             app_handle_menu.exit(0);
         }
-        _ => {}
+        _ => {
+            clear_tray_render_lock(&app_handle_menu);
+            apply_pending_tray_menu(&app_handle_menu);
+            refresh_tray_title(&app_handle_menu);
+        }
     });
 
     TrayIconBuilder::with_id("main-tray")
@@ -221,6 +313,27 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("AuraCalendar")
         .menu(&initial_menu)
         .show_menu_on_left_click(true)
+        .on_tray_icon_event(move |_, event| {
+            if let TrayIconEvent::Click {
+                button,
+                button_state,
+                ..
+            } = event
+            {
+                if button == MouseButton::Left
+                    && (button_state == MouseButtonState::Down
+                        || button_state == MouseButtonState::Up)
+                {
+                    if is_tray_render_locked(&app_handle_tray) {
+                        clear_tray_render_lock(&app_handle_tray);
+                        apply_pending_tray_menu(&app_handle_tray);
+                        refresh_tray_title(&app_handle_tray);
+                    } else {
+                        lock_tray_render(&app_handle_tray);
+                    }
+                }
+            }
+        })
         .build(app)?;
 
     register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
@@ -251,7 +364,11 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                     *cached = tray_events;
                 }
 
-                rebuild_tray_menu(&app_handle, &schedule_events);
+                if is_tray_render_locked(&app_handle) {
+                    store_pending_schedule(&app_handle, schedule_events);
+                } else {
+                    rebuild_tray_menu(&app_handle, &schedule_events);
+                }
 
                 tokio::select! {
                     _ = shutdown_rx.recv() => break,
@@ -267,7 +384,6 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let app_handle = app.handle().clone();
         let disp_config = Arc::clone(&config_arc);
         let disp_hidden = Arc::clone(&is_hidden);
-        let disp_title = Arc::clone(&normal_title);
         let mut shutdown_rx = shutdown_tx.subscribe();
 
         tauri::async_runtime::spawn(async move {
@@ -276,7 +392,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 let disp_duration = std::time::Duration::from_secs(config.display_interval_seconds);
                 let now = Utc::now();
 
-                let next_title = {
+                let _next_title = {
                     let events = app_handle
                         .state::<CachedEvents>()
                         .0
@@ -289,17 +405,11 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                if let Ok(mut t) = disp_title.lock() {
-                    *t = next_title.clone();
-                }
-
                 if !disp_hidden.load(Ordering::Relaxed) {
-                    if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                        let spaced = format!(" {next_title}");
-                        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
-                            eprintln!("failed to refresh tray title: {e}");
-                        }
-                    }
+                    refresh_tray_title(&app_handle);
+                }
+                if !is_tray_render_locked(&app_handle) {
+                    apply_pending_tray_menu(&app_handle);
                 }
 
                 tokio::select! {

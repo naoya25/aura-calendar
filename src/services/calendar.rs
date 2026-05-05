@@ -19,7 +19,7 @@ struct CalendarContext {
     color: String,
 }
 
-/// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと3日分の全予定を返す（長周期で呼ぶ）。
+/// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと設定日数分の全予定を返す（長周期で呼ぶ）。
 pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
     if config.calendars.is_empty() {
         return Ok(FetchResult {

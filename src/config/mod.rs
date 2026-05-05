@@ -334,7 +334,7 @@ mod tests {
         config.calendars.push(CalendarConfig {
             name: "Main".to_string(),
             ical_url: "https://example.com/calendar.ics".to_string(),
-                emoji: None,
+            emoji: None,
         });
 
         assert_eq!(config.normal_title(), "Aura: calendar ready");
@@ -371,8 +371,8 @@ mod tests {
         let raw_config = fs::read_to_string(&path).expect("config file should exist");
 
         assert_eq!(config.calendars.len(), 1);
-            assert!(config.calendars[0].emoji.is_some());
-            assert!(raw_config.contains("\"emoji\""));
+        assert!(config.calendars[0].emoji.is_some());
+        assert!(raw_config.contains("\"emoji\""));
 
         let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
     }

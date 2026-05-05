@@ -975,7 +975,8 @@
 
           // 絵文字値を hidden field から取得して button に適用
           // 絵文字が空の場合は自動割当を生成
-          const emojiValue = cal.emoji || assignedCalendarEmoji(i, cal.name, cal.ical_url);
+          const emojiValue =
+            cal.emoji || assignedCalendarEmoji(i, cal.name, cal.ical_url);
           const picker = item.querySelector(".btn-emoji-picker");
           picker.setAttribute("data-emoji", cal.emoji || "");
           picker.textContent = emojiValue;

@@ -3,7 +3,7 @@ use std::sync::{
     Arc, Mutex, RwLock,
 };
 
-use chrono::{Datelike, Local, Timelike, Utc};
+use chrono::{Datelike, Duration, Local, Timelike, Utc};
 use tauri::image::Image;
 use tauri::menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -77,55 +77,65 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
     let weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
     let mut all_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
-    let mut last_date: Option<chrono::NaiveDate> = None;
-
-    for (i, event) in schedule.iter().enumerate() {
-        let local_start = event.start.with_timezone(&Local);
-        let date = local_start.date_naive();
-
-        if Some(date) != last_date {
-            if last_date.is_some() {
-                if let Ok(sep) = PredefinedMenuItem::separator(app) {
-                    all_items.push(Box::new(sep));
-                }
+    for day_offset in 0..3 {
+        if day_offset > 0 {
+            if let Ok(sep) = PredefinedMenuItem::separator(app) {
+                all_items.push(Box::new(sep));
             }
-            let label = if date == today {
-                "Today".to_string()
-            } else {
-                let wd = date.weekday().num_days_from_sunday() as usize;
-                format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
-            };
-            if let Ok(header) =
-                MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
+        }
+
+        let date = today + Duration::days(day_offset);
+        let label = if date == today {
+            "Today".to_string()
+        } else {
+            let wd = date.weekday().num_days_from_sunday() as usize;
+            format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
+        };
+        if let Ok(header) =
+            MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
+        {
+            all_items.push(Box::new(header));
+        }
+
+        let day_events: Vec<(usize, &CachedEvent, chrono::DateTime<Local>)> = schedule
+            .iter()
+            .enumerate()
+            .filter_map(|(i, event)| {
+                let local_start = event.start.with_timezone(&Local);
+                (local_start.date_naive() == date).then_some((i, event, local_start))
+            })
+            .collect();
+
+        if day_events.is_empty() {
+            if let Ok(item) = MenuItem::with_id(
+                app,
+                format!("event_none_{date}"),
+                "none",
+                true,
+                None::<&str>,
+            ) {
+                all_items.push(Box::new(item));
+            }
+            continue;
+        }
+
+        for (i, event, local_start) in day_events {
+            let label = format_event_label(event, local_start);
+            let icon = calendar_dot_icon(&event.calendar_color);
+            if let Ok(item) = IconMenuItem::with_id(
+                app,
+                format!("event_{i}"),
+                label.clone(),
+                true,
+                icon,
+                None::<&str>,
+            ) {
+                all_items.push(Box::new(item));
+            } else if let Ok(item) =
+                MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>)
             {
-                all_items.push(Box::new(header));
+                all_items.push(Box::new(item));
             }
-            last_date = Some(date);
-        }
-
-        let label = format_event_label(event, local_start);
-        let icon = calendar_dot_icon(&event.calendar_color);
-        if let Ok(item) = IconMenuItem::with_id(
-            app,
-            format!("event_{i}"),
-            label.clone(),
-            true,
-            icon,
-            None::<&str>,
-        ) {
-            all_items.push(Box::new(item));
-        } else if let Ok(item) =
-            MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>)
-        {
-            all_items.push(Box::new(item));
-        }
-    }
-
-    if all_items.is_empty() {
-        if let Ok(empty) =
-            MenuItem::with_id(app, "no_events", "予定なし (3日分)", true, None::<&str>)
-        {
-            all_items.push(Box::new(empty));
         }
     }
 

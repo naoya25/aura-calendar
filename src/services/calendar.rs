@@ -33,7 +33,8 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
         .user_agent(USER_AGENT)
         .build()?;
     let now = Utc::now();
-    let schedule_limit = now + Duration::days(3);
+    let schedule_limit_date =
+        now.with_timezone(&Local).date_naive() + Duration::days(config.tray_days_to_show as i64);
     let mut first_error: Option<reqwest::Error> = None;
     let mut best_display_time: Option<DateTime<Utc>> = None;
     let mut best_events: Vec<CachedEvent> = Vec::new();
@@ -70,7 +71,7 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
 
         let schedule: Vec<CachedEvent> = collect_relevant_events_for_calendar(&body, now, &context)
             .into_iter()
-            .filter(|e| e.start < schedule_limit)
+            .filter(|e| event_is_within_schedule_window(e.start, schedule_limit_date))
             .collect();
         all_schedule.extend(schedule);
     }
@@ -97,6 +98,13 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
 /// キャッシュ済みイベントと現在時刻からタイトルを生成する（短周期で呼ぶ、IO なし）。
 pub fn render_title(config: &AppConfig, events: &[CachedEvent], now: DateTime<Utc>) -> String {
     format_title_group(config, events, now)
+}
+
+fn event_is_within_schedule_window(
+    start: DateTime<Utc>,
+    schedule_limit_date: chrono::NaiveDate,
+) -> bool {
+    start.with_timezone(&Local).date_naive() < schedule_limit_date
 }
 
 fn resolved_calendar_context(index: usize, calendar: &CalendarConfig) -> CalendarContext {
@@ -655,6 +663,40 @@ mod tests {
         let event = parse_next_event(&ics, fixed_now());
         assert!(event.is_some());
         assert_eq!(event.unwrap().title, "All Day");
+    }
+
+    #[test]
+    fn schedule_window_includes_all_times_on_last_displayed_day() {
+        let schedule_limit_date = Local
+            .with_ymd_and_hms(2026, 5, 5, 0, 0, 0)
+            .unwrap()
+            .date_naive();
+        let event_start = Local
+            .with_ymd_and_hms(2026, 5, 4, 23, 30, 0)
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert!(event_is_within_schedule_window(
+            event_start,
+            schedule_limit_date
+        ));
+    }
+
+    #[test]
+    fn schedule_window_excludes_events_from_next_day() {
+        let schedule_limit_date = Local
+            .with_ymd_and_hms(2026, 5, 5, 0, 0, 0)
+            .unwrap()
+            .date_naive();
+        let event_start = Local
+            .with_ymd_and_hms(2026, 5, 5, 0, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert!(!event_is_within_schedule_window(
+            event_start,
+            schedule_limit_date
+        ));
     }
 
     // --- format_title ---

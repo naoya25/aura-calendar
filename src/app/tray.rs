@@ -91,7 +91,8 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
             let wd = date.weekday().num_days_from_sunday() as usize;
             format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
         };
-        if let Ok(header) = MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
+        if let Ok(header) =
+            MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
         {
             all_items.push(Box::new(header));
         }

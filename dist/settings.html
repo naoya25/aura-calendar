@@ -419,7 +419,8 @@
         background: var(--surface-secondary);
         color: var(--text);
         resize: vertical;
-        min-height: 56px;
+        /* Increased min-height ~3x for a larger editing area */
+        min-height: 168px;
         outline: none;
         transition:
           border-color 0.15s,
@@ -730,7 +731,7 @@
         <textarea
           class="format-template"
           id="normal-format"
-          rows="2"
+          rows="6"
           spellcheck="false"
         ></textarea>
         <div

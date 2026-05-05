@@ -50,6 +50,8 @@ pub struct FormatContext {
     pub h: i64,
     pub hh: String,
     pub m: i64,
+    pub s: i64,
+    pub ss: String,
     pub mm: String,
     pub total_minutes: i64,
     pub title: String,
@@ -75,16 +77,21 @@ pub fn build_context(
 ) -> FormatContext {
     let seconds = (display_time - now).num_seconds().max(0);
     let total_minutes = (seconds + 59) / 60;
-    let d = total_minutes / (24 * 60);
-    let remaining = total_minutes - d * 24 * 60;
-    let h = remaining / 60;
-    let m = remaining % 60;
+
+    let d = seconds / (24 * 60 * 60);
+    let mut rem = seconds - d * 24 * 60 * 60;
+    let h = rem / 3600;
+    rem = rem - h * 3600;
+    let m = rem / 60;
+    let s = rem % 60;
 
     FormatContext {
         d,
         hh: format!("{h:02}"),
         h,
         mm: format!("{m:02}"),
+        s,
+        ss: format!("{s:02}"),
         m,
         total_minutes,
         title,
@@ -98,6 +105,8 @@ fn make_context(ctx: &FormatContext) -> minijinja::Value {
         d => ctx.d,
         h => ctx.h,
         hh => ctx.hh,
+        s => ctx.s,
+        ss => ctx.ss,
         m => ctx.m,
         mm => ctx.mm,
         total_minutes => ctx.total_minutes,
@@ -142,6 +151,8 @@ pub fn preview(template: &str) -> Result<String, String> {
             hh => "01",
             m => 30_i64,
             mm => "30",
+            s => 5_i64,
+            ss => "05",
             total_minutes => 90_i64,
             title => "チームMTG",
             active => false,

@@ -963,6 +963,25 @@
           最小 5
           秒。キャッシュから「X分後」を再計算してメニューバーを更新する間隔です。
         </div>
+        <div class="row">
+          <span class="row-label">トレイメニュー表示日数</span>
+          <input
+            type="number"
+            id="tray-days-to-show"
+            min="1"
+            max="30"
+            step="1"
+          />
+        </div>
+        <div
+          style="
+            padding: 2px 16px 12px;
+            font-size: 11px;
+            color: var(--text-tertiary);
+          "
+        >
+          トレイメニューに表示する予定の日数です（1〜30日）。
+        </div>
       </div>
 
       <!-- Footer -->
@@ -1345,6 +1364,10 @@ ${currentTemplate}
             document.getElementById("display-interval").value,
             10,
           );
+          const trayDaysToShow = parseInt(
+            document.getElementById("tray-days-to-show").value,
+            10,
+          );
 
           if (isNaN(refreshInterval) || refreshInterval < 30) {
             showToast("カレンダー取得間隔は30秒以上にしてください", true);
@@ -1352,6 +1375,17 @@ ${currentTemplate}
           }
           if (isNaN(displayInterval) || displayInterval < 5) {
             showToast("表示更新間隔は5秒以上にしてください", true);
+            return;
+          }
+          if (
+            isNaN(trayDaysToShow) ||
+            trayDaysToShow < 1 ||
+            trayDaysToShow > 30
+          ) {
+            showToast(
+              "トレイメニュー表示日数は1〜30の範囲で指定してください",
+              true,
+            );
             return;
           }
 
@@ -1365,6 +1399,7 @@ ${currentTemplate}
             refresh_interval_seconds: refreshInterval,
             display_interval_seconds: displayInterval,
             stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
+            tray_days_to_show: trayDaysToShow,
           };
 
           const saveBtn = document.getElementById("btn-save");
@@ -1394,6 +1429,8 @@ ${currentTemplate}
             config.refresh_interval_seconds;
           document.getElementById("display-interval").value =
             config.display_interval_seconds;
+          document.getElementById("tray-days-to-show").value =
+            config.tray_days_to_show ?? DEFAULTS.tray_days_to_show;
           stealthShortcutValue =
             config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
           renderShortcut(stealthShortcutValue);

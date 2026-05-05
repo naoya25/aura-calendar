@@ -32,7 +32,7 @@ pub struct CalendarConfig {
     pub name: String,
     pub ical_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color: Option<String>,
+    pub emoji: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -104,14 +104,14 @@ impl AppConfig {
         self.save_to(&config_path()?)
     }
 
-    pub fn normalize_calendar_colors(&mut self) {
+    pub fn normalize_calendar_emojis(&mut self) {
         for (index, calendar) in self.calendars.iter_mut().enumerate() {
             if calendar
-                .color
+                .emoji
                 .as_deref()
-                .is_none_or(|color| !is_valid_calendar_color(color))
+                .is_none_or(|emoji| !is_valid_calendar_emoji(emoji))
             {
-                calendar.color = Some(assigned_calendar_color(
+                calendar.emoji = Some(assigned_calendar_emoji(
                     index,
                     &calendar.name,
                     &calendar.ical_url,
@@ -173,21 +173,21 @@ impl From<RawAppConfig> for LoadedConfig {
                 RawCalendarConfig::Legacy(ical_url) => {
                     needs_normalization = true;
                     let name = format!("Calendar {}", index + 1);
-                    let color = assigned_calendar_color(index, &name, &ical_url);
+                    let emoji = assigned_calendar_emoji(index, &name, &ical_url);
                     CalendarConfig {
                         name: name.clone(),
                         ical_url,
-                        color: Some(color),
+                        emoji: Some(emoji),
                     }
                 }
                 RawCalendarConfig::Current(mut calendar) => {
                     if calendar
-                        .color
+                        .emoji
                         .as_deref()
-                        .is_none_or(|color| !is_valid_calendar_color(color))
+                        .is_none_or(|emoji| !is_valid_calendar_emoji(emoji))
                     {
                         needs_normalization = true;
-                        calendar.color = Some(assigned_calendar_color(
+                        calendar.emoji = Some(assigned_calendar_emoji(
                             index,
                             &calendar.name,
                             &calendar.ical_url,
@@ -237,11 +237,8 @@ impl From<RawAppConfig> for LoadedConfig {
     }
 }
 
-fn assigned_calendar_color(index: usize, name: &str, ical_url: &str) -> String {
-    const PALETTE: [&str; 10] = [
-        "#f44336", "#e91e63", "#9c27b0", "#673ab7", "#3f51b5", "#03a9f4", "#009688", "#4caf50",
-        "#ff9800", "#ff5722",
-    ];
+fn assigned_calendar_emoji(index: usize, name: &str, ical_url: &str) -> String {
+    const PALETTE: [&str; 10] = ["🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "⬛", "🟫", "🔵", "🟣"];
 
     if name.is_empty() && ical_url.is_empty() {
         return PALETTE[index % PALETTE.len()].to_string();
@@ -256,9 +253,9 @@ fn assigned_calendar_color(index: usize, name: &str, ical_url: &str) -> String {
     PALETTE[(hash as usize) % PALETTE.len()].to_string()
 }
 
-fn is_valid_calendar_color(value: &str) -> bool {
-    let hex = value.trim().trim_start_matches('#');
-    hex.len() == 6 && hex.chars().all(|ch| ch.is_ascii_hexdigit())
+fn is_valid_calendar_emoji(value: &str) -> bool {
+    let v = value.trim();
+    !v.is_empty() && v.chars().count() <= 4
 }
 
 fn default_refresh_interval_seconds() -> u64 {
@@ -337,7 +334,7 @@ mod tests {
         config.calendars.push(CalendarConfig {
             name: "Main".to_string(),
             ical_url: "https://example.com/calendar.ics".to_string(),
-            color: None,
+            emoji: None,
         });
 
         assert_eq!(config.normal_title(), "Aura: calendar ready");
@@ -374,8 +371,8 @@ mod tests {
         let raw_config = fs::read_to_string(&path).expect("config file should exist");
 
         assert_eq!(config.calendars.len(), 1);
-        assert!(config.calendars[0].color.is_some());
-        assert!(raw_config.contains("\"color\""));
+        assert!(config.calendars[0].emoji.is_some());
+        assert!(raw_config.contains("\"emoji\""));
 
         let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
     }

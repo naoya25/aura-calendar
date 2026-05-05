@@ -14,6 +14,7 @@ use tokio::sync::broadcast;
 use crate::config::AppConfig;
 use crate::services::calendar::{fetch, render_title, CachedEvent};
 use crate::ui::icon::menu_bar_icon;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use urlencoding::decode;
 
 use super::commands::{self, ConfigState, RefreshSignal};
@@ -284,31 +285,52 @@ fn build_schedule_menu_item(
     for (action_index, action) in event.actions.iter().enumerate() {
         let id = format!("event_{event_index}_action_{action_index}");
         // Build a more informative display label: prefer a short service key
-        // followed by the inner value (URL or decoded map query).
-        let display_label = match action.label.as_str() {
+        // followed by the inner value (URL or decoded map query). Then
+        // truncate to `max_display_width` visual width (fullwidth=2).
+        // Show only the inner value (URL or decoded map query) without
+        // a service prefix like "meet:" or "map:".
+        let mut display_label = match action.label.as_str() {
             "Google map" => {
-                // Try to extract the original place query from the maps URL's `query=` param
                 if let Some(pos) = action.target.find("query=") {
                     let raw = &action.target[pos + "query=".len()..];
-                    // raw may include additional params; cut at & if present
                     let end = raw.find('&').unwrap_or(raw.len());
                     let enc = &raw[..end];
                     match decode(enc) {
-                        Ok(decoded) => format!("map: {}", decoded),
-                        Err(_) => format!("map: {}", action.target),
+                        Ok(decoded) => decoded.into_owned(),
+                        Err(_) => action.target.clone(),
                     }
                 } else {
-                    format!("map: {}", action.target)
+                    action.target.clone()
                 }
             }
-            "Google Meet" => format!("meet: {}", action.target),
-            "ZOOM" => format!("zoom: {}", action.target),
-            other => {
-                // For hosts like `support.google.com` or generic labels,
-                // show `label: target` to reveal the inner value.
-                format!("{}: {}", other.to_lowercase(), action.target)
-            }
+            // For Meet/Zoom and other links, show the target (URL or text) only.
+            _ => action.target.clone(),
         };
+
+        // Truncate display label to maximum visual width
+        fn truncate_display(s: &str, max_width: usize) -> String {
+            if s.width() <= max_width {
+                return s.to_string();
+            }
+            let mut acc = 0usize;
+            let mut out = String::new();
+            for ch in s.chars() {
+                let w = ch.width().unwrap_or(0);
+                // Reserve width for ellipsis "..." (3)
+                if acc + w + 3 > max_width {
+                    break;
+                }
+                out.push(ch);
+                acc += w;
+            }
+            if out.is_empty() {
+                "...".to_string()
+            } else {
+                format!("{}...", out)
+            }
+        }
+
+        display_label = truncate_display(&display_label, 30);
 
         if let Ok(item) = MenuItem::with_id(app, id, display_label, true, None::<&str>) {
             child_items.push(Box::new(item));
@@ -538,7 +560,7 @@ fn format_event_label(event: &CachedEvent, local_start: chrono::DateTime<Local>)
             }
         }
     };
-    let title = truncate_chars(&event.title, 20);
+    let title = truncate_chars(&event.title, 30);
     if end_str.is_empty() {
         format!("{}~ {}", start_hm, title)
     } else {

@@ -17,7 +17,7 @@ pub fn get_config(state: tauri::State<ConfigState>) -> Result<AppConfig, String>
 #[tauri::command]
 pub fn save_config(
     app: tauri::AppHandle,
-    config: AppConfig,
+    mut config: AppConfig,
     config_state: tauri::State<ConfigState>,
     refresh: tauri::State<RefreshSignal>,
 ) -> Result<(), String> {
@@ -35,6 +35,7 @@ pub fn save_config(
         return Err(format!("無効なショートカットキーです: {e}"));
     }
 
+    config.normalize_calendar_colors();
     config.save().map_err(|e| e.to_string())?;
     match config_state.0.write() {
         Ok(mut guard) => {

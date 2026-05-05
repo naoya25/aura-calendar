@@ -3,8 +3,9 @@ use std::sync::{
     Arc, Mutex, RwLock,
 };
 
-use chrono::{Datelike, Local, Timelike, Utc};
-use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use chrono::{Datelike, Duration, Local, Timelike, Utc};
+use tauri::image::Image;
+use tauri::menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -69,50 +70,75 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
     }
 }
 
-/// 3日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
+/// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
+    let config = app.state::<ConfigState>();
+    let days_to_show = config.0.read().map(|g| g.tray_days_to_show).unwrap_or(4);
+
     let now_local = Local::now();
     let today = now_local.date_naive();
     let weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
     let mut all_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
-    let mut last_date: Option<chrono::NaiveDate> = None;
-
-    for (i, event) in schedule.iter().enumerate() {
-        let local_start = event.start.with_timezone(&Local);
-        let date = local_start.date_naive();
-
-        if Some(date) != last_date {
-            if last_date.is_some() {
-                if let Ok(sep) = PredefinedMenuItem::separator(app) {
-                    all_items.push(Box::new(sep));
-                }
+    for day_offset in 0..days_to_show {
+        if day_offset > 0 {
+            if let Ok(sep) = PredefinedMenuItem::separator(app) {
+                all_items.push(Box::new(sep));
             }
-            let label = if date == today {
-                "Today".to_string()
-            } else {
-                let wd = date.weekday().num_days_from_sunday() as usize;
-                format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
-            };
-            if let Ok(header) =
-                MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
-            {
-                all_items.push(Box::new(header));
-            }
-            last_date = Some(date);
         }
 
-        let label = format_event_label(event, local_start);
-        if let Ok(item) = MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>) {
-            all_items.push(Box::new(item));
-        }
-    }
-
-    if all_items.is_empty() {
-        if let Ok(empty) =
-            MenuItem::with_id(app, "no_events", "予定なし (3日分)", true, None::<&str>)
+        let date = today + Duration::days(day_offset as i64);
+        let label = if date == today {
+            "Today".to_string()
+        } else {
+            let wd = date.weekday().num_days_from_sunday() as usize;
+            format!("{}/{} ({})", date.month(), date.day(), weekdays[wd])
+        };
+        if let Ok(header) =
+            MenuItem::with_id(app, format!("date_{date}"), label, true, None::<&str>)
         {
-            all_items.push(Box::new(empty));
+            all_items.push(Box::new(header));
+        }
+
+        let day_events: Vec<(usize, &CachedEvent, chrono::DateTime<Local>)> = schedule
+            .iter()
+            .enumerate()
+            .filter_map(|(i, event)| {
+                let local_start = event.start.with_timezone(&Local);
+                (local_start.date_naive() == date).then_some((i, event, local_start))
+            })
+            .collect();
+
+        if day_events.is_empty() {
+            if let Ok(item) = MenuItem::with_id(
+                app,
+                format!("event_none_{date}"),
+                "none",
+                true,
+                None::<&str>,
+            ) {
+                all_items.push(Box::new(item));
+            }
+            continue;
+        }
+
+        for (i, event, local_start) in day_events {
+            let label = format_event_label(event, local_start);
+            let icon = calendar_dot_icon(&event.calendar_color);
+            if let Ok(item) = IconMenuItem::with_id(
+                app,
+                format!("event_{i}"),
+                label.clone(),
+                true,
+                icon,
+                None::<&str>,
+            ) {
+                all_items.push(Box::new(item));
+            } else if let Ok(item) =
+                MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>)
+            {
+                all_items.push(Box::new(item));
+            }
         }
     }
 
@@ -317,4 +343,47 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     } else {
         truncated
     }
+}
+
+fn calendar_dot_icon(color: &str) -> Option<Image<'static>> {
+    let [red, green, blue, alpha] = parse_hex_color(color)?;
+    let size = 12usize;
+    let mut rgba = vec![0u8; size * size * 4];
+    let center = (size as f32 - 1.0) / 2.0;
+    let half_side = 3.2_f32;
+
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            if dx.abs() <= half_side && dy.abs() <= half_side {
+                let idx = (y * size + x) * 4;
+                rgba[idx] = red;
+                rgba[idx + 1] = green;
+                rgba[idx + 2] = blue;
+                rgba[idx + 3] = alpha;
+            }
+        }
+    }
+
+    Some(Image::new_owned(rgba, size as u32, size as u32))
+}
+
+fn parse_hex_color(value: &str) -> Option<[u8; 4]> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 && hex.len() != 8 {
+        return None;
+    }
+
+    let rgb = if hex.len() == 6 { hex } else { &hex[..6] };
+    let red = u8::from_str_radix(&rgb[0..2], 16).ok()?;
+    let green = u8::from_str_radix(&rgb[2..4], 16).ok()?;
+    let blue = u8::from_str_radix(&rgb[4..6], 16).ok()?;
+    let alpha = if hex.len() == 8 {
+        u8::from_str_radix(&hex[6..8], 16).ok()?
+    } else {
+        0xFF
+    };
+
+    Some([red, green, blue, alpha])
 }

@@ -96,46 +96,25 @@
         letter-spacing: -0.4px;
         color: var(--text);
       }
-      .page-subtitle {
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-top: 1px;
-      }
 
-      /* ─── Section ─── */
-      .section {
+      /* ─── Setting Block ─── */
+      .setting-block {
         background: var(--surface);
         border-radius: var(--radius-md);
         box-shadow: var(--shadow-sm);
         overflow: hidden;
-      }
-      .section-label {
-        padding: 12px 16px 0;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--text-secondary);
-      }
-
-      /* ─── Row ─── */
-      .row {
+        padding: 12px 16px;
         display: flex;
         align-items: center;
-        padding: 11px 16px;
+        justify-content: space-between;
         gap: 12px;
-        border-bottom: 1px solid var(--border);
-      }
-      .row:last-child {
-        border-bottom: none;
       }
 
-      .row-label {
+      .setting-label {
         font-size: 13px;
         font-weight: 500;
         color: var(--text);
-        flex: 0 0 130px;
-        white-space: nowrap;
+        flex: 0 0 auto;
       }
 
       /* ─── Inputs ─── */
@@ -174,7 +153,6 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-left: auto;
       }
       .toggle {
         position: relative;
@@ -220,40 +198,27 @@
       .calendar-item {
         padding: 12px 16px;
         border-bottom: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 20px 40px 1fr 2fr 20px;
+        align-items: center;
         gap: 8px;
       }
       .calendar-item:last-child {
         border-bottom: none;
       }
 
-      .calendar-item-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
       .calendar-item-number {
         width: 20px;
         height: 20px;
-        border-radius: 50%;
-        background: var(--accent-bg);
-        color: var(--accent);
         font-size: 11px;
         font-weight: 700;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
-      }
-      .calendar-item-title {
-        font-size: 12px;
-        font-weight: 600;
         color: var(--text-secondary);
-        flex: 1;
-        text-transform: uppercase;
-        letter-spacing: 0.3px;
       }
+
       .btn-remove {
         width: 20px;
         height: 20px;
@@ -277,19 +242,121 @@
       }
 
       .calendar-item-fields {
-        display: grid;
-        grid-template-columns: 1fr 2fr;
-        gap: 6px;
+        display: contents;
       }
       .calendar-item-fields input {
-        flex: unset;
         width: 100%;
+        height: 40px;
       }
 
-      .input-hint {
-        font-size: 11px;
+      .btn-color-picker {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        border: 2px solid var(--border);
+        background-color: transparent;
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          background-color 0.15s;
+        flex-shrink: 0;
+        position: relative;
+      }
+      .btn-color-picker:hover {
+        border-color: var(--accent);
+      }
+      .btn-color-picker:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.18);
+      }
+      .btn-color-picker::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 6px;
+        background: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 2px,
+          currentColor 2px,
+          currentColor 4px
+        );
+        opacity: 0;
+        pointer-events: none;
+      }
+      .btn-color-picker[data-color=""]::after {
+        opacity: 0.15;
         color: var(--text-tertiary);
-        margin-top: 1px;
+      }
+
+      /* ─── Color Picker Modal ─── */
+      .color-picker-modal {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        animation: fadeIn 0.15s ease-out;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .color-picker-popup {
+        background: var(--surface);
+        border-radius: var(--radius-md);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        padding: 16px;
+        min-width: 240px;
+      }
+      .color-picker-header {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: var(--text);
+      }
+      .color-palette {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+      }
+      .color-option {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        border: 2px solid var(--border);
+        background-color: var(--accent-bg);
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .color-option:hover {
+        transform: scale(1.08);
+        border-color: var(--accent);
+      }
+      .color-option:focus {
+        outline: none;
+        box-shadow:
+          0 0 0 2px var(--surface),
+          0 0 0 4px var(--accent);
+      }
+      .color-option.color-none {
+        background: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 2px,
+          var(--text-tertiary) 2px,
+          var(--text-tertiary) 4px
+        );
       }
 
       .add-row {
@@ -340,28 +407,7 @@
         margin-top: 4px;
       }
 
-      /* ─── Format section ─── */
-      .format-block {
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .format-block-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .format-block-label {
-        font-size: 13px;
-        font-weight: 500;
-        color: var(--text);
-      }
-      .format-block-actions {
-        display: flex;
-        gap: 6px;
-      }
+      /* ─── Format textarea ─── */
       .format-template {
         width: 100%;
         padding: 8px 10px;
@@ -385,97 +431,6 @@
         background: var(--input-bg);
       }
 
-      .preview-result {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        min-height: 24px;
-        padding: 5px 10px;
-        border-radius: var(--radius-sm);
-        background: var(--surface-secondary);
-        font-size: 12px;
-        color: var(--text-secondary);
-        border: 1px solid var(--border);
-      }
-      .preview-result.error {
-        background: var(--danger-bg);
-        border-color: var(--danger);
-        color: var(--danger);
-      }
-      .preview-result.success {
-        background: rgba(52, 199, 89, 0.08);
-        border-color: rgba(52, 199, 89, 0.3);
-        color: var(--text);
-      }
-      .preview-arrow {
-        color: var(--text-tertiary);
-        flex-shrink: 0;
-      }
-
-      /* ─── Variable chips ─── */
-      .vars-block {
-        padding: 12px 16px 14px;
-        border-bottom: 1px solid var(--border);
-      }
-      .vars-title {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text-secondary);
-        margin-bottom: 8px;
-      }
-      .vars-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-      }
-      .var-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 3px 8px;
-        border-radius: 6px;
-        background: var(--surface-secondary);
-        border: 1px solid var(--border);
-        cursor: default;
-      }
-      .var-chip code {
-        font-family: "SF Mono", "Menlo", monospace;
-        font-size: 11px;
-        color: var(--accent);
-      }
-      .var-chip-desc {
-        font-size: 11px;
-        color: var(--text-secondary);
-      }
-
-      .example-block {
-        padding: 0 16px 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-      .example-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text-secondary);
-        margin-bottom: 4px;
-      }
-      .example-code {
-        font-family: "SF Mono", "Menlo", monospace;
-        font-size: 11px;
-        color: var(--text-secondary);
-        background: var(--surface-secondary);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 6px 10px;
-        line-height: 1.5;
-        word-break: break-all;
-      }
-
       /* ─── Buttons ─── */
       .btn {
         display: inline-flex;
@@ -493,24 +448,6 @@
         border: none;
         outline: none;
         white-space: nowrap;
-      }
-      .btn-ghost {
-        background: var(--surface-secondary);
-        color: var(--text-secondary);
-        border: 1px solid var(--border);
-      }
-      .btn-ghost:hover {
-        background: var(--border);
-        color: var(--text);
-      }
-      .btn-accent {
-        background: var(--accent-bg);
-        color: var(--accent);
-        border: 1px solid rgba(0, 122, 255, 0.2);
-      }
-      .btn-accent:hover {
-        background: var(--accent);
-        color: #fff;
       }
       .btn-secondary {
         padding: 7px 18px;
@@ -545,12 +482,9 @@
       .footer {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-end;
         padding: 4px 0;
-      }
-      .footer-hint {
-        font-size: 11px;
-        color: var(--text-tertiary);
+        gap: 8px;
       }
       .footer-actions {
         display: flex;
@@ -668,6 +602,85 @@
         color: var(--accent);
         animation: blink 1.2s ease-in-out infinite;
       }
+
+      /* Multi-line setting block */
+      .setting-block.multi-line {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .setting-block.multi-line .setting-label {
+        width: 100%;
+      }
+      .setting-block.multi-line > :not(.setting-label) {
+        width: 100%;
+      }
+
+      /* Format block with actions */
+      .format-block-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin-bottom: 8px;
+        gap: 8px;
+      }
+      .format-block-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+      }
+      .format-block-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .btn-ghost {
+        background: var(--surface-secondary);
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        background: var(--border);
+        color: var(--text);
+      }
+      .btn-accent {
+        background: var(--accent-bg);
+        color: var(--accent);
+        border: 1px solid rgba(0, 122, 255, 0.2);
+      }
+      .btn-accent:hover {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .preview-result {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        padding: 5px 10px;
+        border-radius: var(--radius-sm);
+        background: var(--surface-secondary);
+        font-size: 12px;
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+        margin-top: 8px;
+      }
+      .preview-result.error {
+        background: var(--danger-bg);
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      .preview-result.success {
+        background: rgba(52, 199, 89, 0.08);
+        border-color: rgba(52, 199, 89, 0.3);
+        color: var(--text);
+      }
+      .preview-arrow {
+        color: var(--text-tertiary);
+        flex-shrink: 0;
+      }
     </style>
   </head>
   <body>
@@ -684,14 +697,13 @@
         </div>
         <div>
           <div class="page-title">AuraCalendar 設定</div>
-          <div class="page-subtitle">カレンダーと表示の設定を管理します</div>
         </div>
       </div>
 
       <!-- Calendars -->
-      <div class="section">
-        <div class="section-label" style="padding-bottom: 4px">カレンダー</div>
-        <div id="calendar-list"></div>
+      <div class="setting-block multi-line">
+        <div class="setting-label">カレンダー</div>
+        <div id="calendar-list" style="width: 100%"></div>
         <div class="add-row">
           <button class="btn-add" id="btn-add-calendar">
             <span class="btn-add-icon">＋</span> カレンダーを追加
@@ -699,180 +711,95 @@
         </div>
       </div>
 
-      <!-- Display Format -->
-      <div class="section">
-        <div class="section-label" style="padding-bottom: 4px">表示形式</div>
-
-        <!-- Normal format -->
-        <div class="format-block">
-          <div class="format-block-header">
-            <span class="format-block-label">通常フォーマット</span>
-            <div class="format-block-actions">
-              <button class="btn btn-ghost" id="btn-reset-format">
-                ↩ デフォルト
-              </button>
-              <button class="btn btn-ghost" id="btn-copy-ai-prompt">
-                ✦ AIプロンプト
-              </button>
-              <button class="btn btn-accent" id="btn-preview">
-                ▶ プレビュー
-              </button>
-            </div>
-          </div>
-          <textarea
-            class="format-template"
-            id="normal-format"
-            rows="2"
-            spellcheck="false"
-          ></textarea>
-          <div
-            id="preview-result"
-            class="preview-result"
-            style="display: none"
-          ></div>
-        </div>
-
-        <!-- Variable reference -->
-        <div class="vars-block">
-          <div class="vars-title">使用できる変数</div>
-          <div class="vars-grid">
-            <div class="var-chip">
-              <code>&#123;&#123; total_minutes &#125;&#125;</code
-              ><span class="var-chip-desc">残り合計分</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; d &#125;&#125;</code
-              ><span class="var-chip-desc">日数</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; h &#125;&#125;</code
-              ><span class="var-chip-desc">時間(0-23)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; hh &#125;&#125;</code
-              ><span class="var-chip-desc">時間(2桁)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; m &#125;&#125;</code
-              ><span class="var-chip-desc">分(0-59)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; mm &#125;&#125;</code
-              ><span class="var-chip-desc">分(2桁)</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; title &#125;&#125;</code
-              ><span class="var-chip-desc">タイトル</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; active &#125;&#125;</code
-              ><span class="var-chip-desc">進行中</span>
-            </div>
-            <div class="var-chip">
-              <code>&#123;&#123; count &#125;&#125;</code
-              ><span class="var-chip-desc">同時予定数</span>
-            </div>
+      <!-- Normal Format -->
+      <div class="setting-block multi-line">
+        <div class="format-block-header">
+          <span class="format-block-label">通常フォーマット</span>
+          <div class="format-block-actions">
+            <button class="btn btn-ghost" id="btn-reset-format">
+              ↩ デフォルト
+            </button>
+            <button class="btn btn-ghost" id="btn-copy-ai-prompt">
+              ✦ AIプロンプト
+            </button>
+            <button class="btn btn-accent" id="btn-preview">
+              ▶ プレビュー
+            </button>
           </div>
         </div>
+        <textarea
+          class="format-template"
+          id="normal-format"
+          rows="2"
+          spellcheck="false"
+        ></textarea>
+        <div
+          id="preview-result"
+          class="preview-result"
+          style="display: none"
+        ></div>
+      </div>
 
-        <!-- Examples -->
-        <div class="example-block">
-          <div class="example-label">例</div>
-          <div class="example-code">
-            &#123;% if d > 0 %&#125;&#123;&#123; d &#125;&#125;日&#123;% endif
-            %&#125;&#123;% if h > 0 %&#125;&#123;&#123; h
-            &#125;&#125;時間&#123;% endif %&#125;&#123;&#123; m &#125;&#125;分後
-            &#123;&#123; title &#125;&#125;
-          </div>
-          <div class="example-code" style="margin-top: 4px">
-            &#123;% if active %&#125;進行中&#123;% else %&#125;&#123;&#123;
-            total_minutes &#125;&#125;分後&#123;% endif %&#125; &#123;&#123;
-            title &#125;&#125;
-          </div>
-        </div>
+      <!-- Stealth Format -->
+      <div class="setting-block">
+        <span class="setting-label">ステルス</span>
+        <input type="text" id="stealth-format" placeholder="***" />
+      </div>
 
-        <!-- Stealth format -->
-        <div class="row">
-          <span class="row-label">ステルス</span>
-          <input type="text" id="stealth-format" placeholder="***" />
-        </div>
-
-        <!-- Stealth shortcut -->
-        <div class="row">
-          <span class="row-label">ステルス切替キー</span>
-          <div
-            class="shortcut-recorder"
-            id="stealth-shortcut"
-            tabindex="0"
-            role="button"
+      <!-- Stealth Shortcut -->
+      <div class="setting-block">
+        <span class="setting-label">ステルス切替</span>
+        <div
+          class="shortcut-recorder"
+          id="stealth-shortcut"
+          tabindex="0"
+          role="button"
+        >
+          <div class="shortcut-keys" id="stealth-shortcut-keys"></div>
+          <span class="shortcut-hint" id="stealth-shortcut-hint"
+            >クリックして変更</span
           >
-            <div class="shortcut-keys" id="stealth-shortcut-keys"></div>
-            <span class="shortcut-hint" id="stealth-shortcut-hint"
-              >クリックして変更</span
-            >
-          </div>
-        </div>
-
-        <!-- Show title -->
-        <div class="row">
-          <span class="row-label">タイトルを表示</span>
-          <div class="toggle-wrapper">
-            <label class="toggle">
-              <input type="checkbox" id="show-title" />
-              <span class="toggle-track"></span>
-              <span class="toggle-thumb"></span>
-            </label>
-          </div>
         </div>
       </div>
 
-      <!-- Refresh -->
-      <div class="section">
-        <div class="section-label" style="padding-bottom: 4px">更新設定</div>
-        <div class="row">
-          <span class="row-label">カレンダー取得間隔（秒）</span>
-          <input
-            type="number"
-            id="refresh-interval"
-            min="30"
-            max="86400"
-            step="30"
-          />
+      <!-- Show Title -->
+      <div class="setting-block">
+        <span class="setting-label">タイトルを表示</span>
+        <div class="toggle-wrapper">
+          <label class="toggle">
+            <input type="checkbox" id="show-title" />
+            <span class="toggle-track"></span>
+            <span class="toggle-thumb"></span>
+          </label>
         </div>
-        <div
-          style="
-            padding: 2px 16px 8px;
-            font-size: 11px;
-            color: var(--text-tertiary);
-          "
-        >
-          最小 30 秒。ネットワークからカレンダーを取得する間隔です。
-        </div>
-        <div class="row">
-          <span class="row-label">表示更新間隔（秒）</span>
-          <input
-            type="number"
-            id="display-interval"
-            min="5"
-            max="300"
-            step="5"
-          />
-        </div>
-        <div
-          style="
-            padding: 2px 16px 12px;
-            font-size: 11px;
-            color: var(--text-tertiary);
-          "
-        >
-          最小 5
-          秒。キャッシュから「X分後」を再計算してメニューバーを更新する間隔です。
-        </div>
+      </div>
+
+      <!-- Refresh Interval -->
+      <div class="setting-block">
+        <span class="setting-label">カレンダー取得間隔（秒）</span>
+        <input
+          type="number"
+          id="refresh-interval"
+          min="30"
+          max="86400"
+          step="30"
+        />
+      </div>
+
+      <!-- Display Interval -->
+      <div class="setting-block">
+        <span class="setting-label">表示更新間隔（秒）</span>
+        <input type="number" id="display-interval" min="5" max="300" step="5" />
+      </div>
+
+      <!-- Tray Days -->
+      <div class="setting-block">
+        <span class="setting-label">トレイメニュー表示日数</span>
+        <input type="number" id="tray-days-to-show" min="1" max="30" step="1" />
       </div>
 
       <!-- Footer -->
       <div class="footer">
-        <span class="footer-hint">Jinja2 テンプレート構文に対応</span>
         <div class="footer-actions">
           <button class="btn btn-secondary" id="btn-cancel">キャンセル</button>
           <button class="btn btn-primary" id="btn-save">保存</button>
@@ -989,6 +916,34 @@
         }, 2500);
       }
 
+      const COLOR_PALETTE = [
+        "#f44336",
+        "#e91e63",
+        "#9c27b0",
+        "#673ab7",
+        "#3f51b5",
+        "#03a9f4",
+        "#009688",
+        "#4caf50",
+        "#ff9800",
+        "#ff5722",
+      ];
+
+      function assignedCalendarColor(index, name, icalUrl) {
+        // Rust側と同じロジック: 色がない場合は自動配色
+        if (!name && !icalUrl) {
+          return COLOR_PALETTE[index % COLOR_PALETTE.length];
+        }
+        // FNV-1a hash を使用
+        let hash = 0xcbf29ce484222325;
+        const text = name + icalUrl;
+        for (let i = 0; i < text.length; i++) {
+          hash ^= text.charCodeAt(i);
+          hash = (hash * 0x100000001b3) >>> 0;
+        }
+        return COLOR_PALETTE[(hash >>> 0) % COLOR_PALETTE.length];
+      }
+
       function renderCalendars(calendars) {
         const list = document.getElementById("calendar-list");
         list.innerHTML = "";
@@ -1007,21 +962,88 @@
           const item = document.createElement("div");
           item.className = "calendar-item";
           item.innerHTML = `
-            <div class="calendar-item-header">
-              <div class="calendar-item-number">${i + 1}</div>
-              <div class="calendar-item-title">カレンダー ${i + 1}</div>
-              <button class="btn-remove" title="削除" data-index="${i}">−</button>
-            </div>
+            <div class="calendar-item-number">${i + 1}</div>
             <div class="calendar-item-fields">
+              <button type="button" class="btn-color-picker" data-index="${i}" data-color="" title="色を選択"></button>
               <input type="text" placeholder="名前" value="${escapeAttr(cal.name)}"
                      data-index="${i}" data-field="name" />
               <input type="url" placeholder="iCal URL (https://...)" value="${escapeAttr(cal.ical_url)}"
                      data-index="${i}" data-field="ical_url" />
-            </div>`;
+              <input type="hidden" value="${escapeAttr(cal.color ?? "")}" data-index="${i}" data-field="color" />
+            </div>
+            <button class="btn-remove" title="削除" data-index="${i}">−</button>`;
+
+          // 色値を hidden field から取得して button に適用
+          // 色が空の場合は自動配色を生成
+          const colorValue =
+            cal.color || assignedCalendarColor(i, cal.name, cal.ical_url);
+          const picker = item.querySelector(".btn-color-picker");
+          picker.setAttribute("data-color", cal.color || "");
+          picker.style.backgroundColor = colorValue;
+
           item
             .querySelector(".btn-remove")
             .addEventListener("click", () => removeCalendar(i));
+          item
+            .querySelector(".btn-color-picker")
+            .addEventListener("click", (e) => showColorPicker(e, i));
           list.appendChild(item);
+        });
+      }
+
+      function showColorPicker(event, calendarIndex) {
+        event.preventDefault();
+        const modal = document.createElement("div");
+        modal.className = "color-picker-modal";
+        modal.innerHTML = `
+          <div class="color-picker-popup">
+            <div class="color-picker-header">色を選択</div>
+            <div class="color-palette">
+              ${COLOR_PALETTE.map(
+                (color) => `
+                <button type="button" class="color-option" data-color="${color}" title="${color}"></button>
+              `,
+              ).join("")}
+              <button type="button" class="color-option color-none" data-color="" title="未設定"></button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+
+        // DOM に追加後、JavaScript で直接色を set
+        const colorButtons = modal.querySelectorAll(".color-option");
+        colorButtons.forEach((btn, idx) => {
+          if (idx < COLOR_PALETTE.length) {
+            btn.style.backgroundColor = COLOR_PALETTE[idx];
+          }
+        });
+
+        const updateColor = (color) => {
+          const picker = document.querySelector(
+            `.btn-color-picker[data-index="${calendarIndex}"]`,
+          );
+          const hidden = picker.parentElement.querySelector(
+            `input[data-field="color"][data-index="${calendarIndex}"]`,
+          );
+          // 直接 backgroundColor を設定
+          if (color) {
+            picker.style.backgroundColor = color;
+          } else {
+            picker.style.backgroundColor = "";
+          }
+          picker.setAttribute("data-color", color);
+          if (hidden) hidden.value = color;
+          modal.remove();
+        };
+
+        modal.querySelectorAll(".color-option").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            updateColor(btn.getAttribute("data-color"));
+          });
+        });
+
+        modal.addEventListener("click", (e) => {
+          if (e.target === modal) modal.remove();
         });
       }
 
@@ -1039,6 +1061,9 @@
               item
                 .querySelector("input[data-field='ical_url']")
                 ?.value.trim() ?? "",
+            color:
+              item.querySelector("input[data-field='color']")?.value.trim() ??
+              "",
           }),
         );
       }
@@ -1053,7 +1078,7 @@
         .getElementById("btn-add-calendar")
         .addEventListener("click", () => {
           const calendars = getCalendarsFromDOM();
-          calendars.push({ name: "", ical_url: "" });
+          calendars.push({ name: "", ical_url: "", color: "" });
           renderCalendars(calendars);
           const items = document.querySelectorAll(".calendar-item");
           items[items.length - 1]?.querySelector("input")?.focus();
@@ -1128,6 +1153,8 @@ ${currentTemplate}
       document
         .getElementById("btn-cancel")
         .addEventListener("click", async () => {
+          // キャンセル時に変更内容を破棄し、config.jsonの内容に戻す
+          await init();
           await invoke("close_settings_window");
         });
 
@@ -1152,6 +1179,10 @@ ${currentTemplate}
             document.getElementById("display-interval").value,
             10,
           );
+          const trayDaysToShow = parseInt(
+            document.getElementById("tray-days-to-show").value,
+            10,
+          );
 
           if (isNaN(refreshInterval) || refreshInterval < 30) {
             showToast("カレンダー取得間隔は30秒以上にしてください", true);
@@ -1159,6 +1190,17 @@ ${currentTemplate}
           }
           if (isNaN(displayInterval) || displayInterval < 5) {
             showToast("表示更新間隔は5秒以上にしてください", true);
+            return;
+          }
+          if (
+            isNaN(trayDaysToShow) ||
+            trayDaysToShow < 1 ||
+            trayDaysToShow > 30
+          ) {
+            showToast(
+              "トレイメニュー表示日数は1〜30の範囲で指定してください",
+              true,
+            );
             return;
           }
 
@@ -1172,6 +1214,7 @@ ${currentTemplate}
             refresh_interval_seconds: refreshInterval,
             display_interval_seconds: displayInterval,
             stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
+            tray_days_to_show: trayDaysToShow,
           };
 
           const saveBtn = document.getElementById("btn-save");
@@ -1201,6 +1244,8 @@ ${currentTemplate}
             config.refresh_interval_seconds;
           document.getElementById("display-interval").value =
             config.display_interval_seconds;
+          document.getElementById("tray-days-to-show").value =
+            config.tray_days_to_show ?? DEFAULTS.tray_days_to_show;
           stealthShortcutValue =
             config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
           renderShortcut(stealthShortcutValue);

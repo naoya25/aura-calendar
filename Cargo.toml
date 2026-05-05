@@ -16,6 +16,8 @@ reqwest = { version = "0.12", features = ["rustls-tls"] }
 rrule = "0.13"
 thiserror = "2"
 minijinja = "2"
+webbrowser = "0.8"
+urlencoding = "2"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

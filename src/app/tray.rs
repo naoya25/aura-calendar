@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use chrono::{Datelike, Duration, Local, Timelike, Utc};
 use tauri::image::Image;
-use tauri::menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{IconMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -30,6 +30,8 @@ pub struct TrayPresentationState {
     pub render_lock_until: Mutex<Option<Instant>>,
     pub pending_schedule: Mutex<Option<Vec<CachedEvent>>>,
 }
+
+pub struct CachedSchedule(pub Mutex<Option<Vec<CachedEvent>>>);
 
 pub struct CachedEvents(pub Mutex<Option<Vec<CachedEvent>>>);
 
@@ -72,6 +74,19 @@ fn take_pending_schedule(app: &tauri::AppHandle) -> Option<Vec<CachedEvent>> {
     let state = app.state::<TrayPresentationState>();
     let lock_result = state.pending_schedule.lock();
     lock_result.ok().and_then(|mut pending| pending.take())
+}
+
+fn store_cached_schedule(app: &tauri::AppHandle, schedule: Vec<CachedEvent>) {
+    let state = app.state::<CachedSchedule>();
+    let lock_result = state.0.lock();
+    if let Ok(mut cached_schedule) = lock_result {
+        *cached_schedule = Some(schedule);
+    }
+}
+
+fn cached_schedule(app: &tauri::AppHandle) -> Option<Vec<CachedEvent>> {
+    let state = app.state::<CachedSchedule>();
+    state.0.lock().ok().and_then(|guard| guard.clone())
 }
 
 fn current_tray_title(app: &tauri::AppHandle) -> String {
@@ -207,20 +222,8 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
 
         for (i, event, local_start) in day_events {
             let label = format_event_label(event, local_start);
-            let icon = calendar_dot_icon(&event.calendar_color);
-            if let Ok(item) = IconMenuItem::with_id(
-                app,
-                format!("event_{i}"),
-                label.clone(),
-                true,
-                icon,
-                None::<&str>,
-            ) {
-                all_items.push(Box::new(item));
-            } else if let Ok(item) =
-                MenuItem::with_id(app, format!("event_{i}"), label, true, None::<&str>)
-            {
-                all_items.push(Box::new(item));
+            if let Some(item) = build_schedule_menu_item(app, i, event, label) {
+                all_items.push(item);
             }
         }
     }
@@ -249,6 +252,66 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
     }
 }
 
+fn build_schedule_menu_item(
+    app: &tauri::AppHandle,
+    event_index: usize,
+    event: &CachedEvent,
+    label: String,
+) -> Option<Box<dyn IsMenuItem<tauri::Wry>>> {
+    if event.actions.is_empty() {
+        let icon = calendar_dot_icon(&event.calendar_color);
+        if let Ok(item) = IconMenuItem::with_id(
+            app,
+            format!("event_{event_index}"),
+            label.clone(),
+            true,
+            icon,
+            None::<&str>,
+        ) {
+            return Some(Box::new(item));
+        }
+        if let Ok(item) = MenuItem::with_id(
+            app,
+            format!("event_{event_index}"),
+            label,
+            true,
+            None::<&str>,
+        ) {
+            return Some(Box::new(item));
+        }
+        return None;
+    }
+
+    let mut child_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
+    for (action_index, action) in event.actions.iter().enumerate() {
+        let id = format!("event_{event_index}_action_{action_index}");
+        if let Ok(item) = MenuItem::with_id(app, id, action.label.clone(), true, None::<&str>) {
+            child_items.push(Box::new(item));
+        }
+    }
+
+    if child_items.is_empty() {
+        return None;
+    }
+
+    let child_refs: Vec<&dyn IsMenuItem<tauri::Wry>> =
+        child_items.iter().map(|item| item.as_ref()).collect();
+    Submenu::with_items(app, label, true, &child_refs)
+        .ok()
+        .map(|submenu| Box::new(submenu) as Box<dyn IsMenuItem<tauri::Wry>>)
+}
+
+fn resolve_event_action_target(app: &tauri::AppHandle, menu_id: &str) -> Option<String> {
+    let event_id = menu_id.strip_prefix("event_")?;
+    let (event_index_str, action_index_str) = event_id.split_once("_action_")?;
+    let event_index = event_index_str.parse::<usize>().ok()?;
+    let action_index = action_index_str.parse::<usize>().ok()?;
+    let schedule = cached_schedule(app)?;
+    let event = schedule.get(event_index)?;
+    let action = event.actions.get(action_index)?;
+    Some(action.target.clone())
+}
+
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create()?;
     let config_arc = Arc::new(RwLock::new(config.clone()));
@@ -266,6 +329,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         render_lock_until: Mutex::new(None),
         pending_schedule: Mutex::new(None),
     });
+    app.manage(CachedSchedule(Mutex::new(None)));
     app.manage(CachedEvents(Mutex::new(None)));
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
@@ -298,6 +362,16 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
             let allow_exit = app_handle_menu.state::<AllowExit>();
             allow_exit.0.store(true, Ordering::Relaxed);
             app_handle_menu.exit(0);
+        }
+        menu_id if menu_id.starts_with("event_") => {
+            clear_tray_render_lock(&app_handle_menu);
+            apply_pending_tray_menu(&app_handle_menu);
+            refresh_tray_title(&app_handle_menu);
+            if let Some(target) = resolve_event_action_target(&app_handle_menu, menu_id) {
+                if let Err(e) = webbrowser::open(&target) {
+                    eprintln!("failed to open external target: {e}");
+                }
+            }
         }
         _ => {
             clear_tray_render_lock(&app_handle_menu);
@@ -363,6 +437,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(mut cached) = app_handle.state::<CachedEvents>().0.lock() {
                     *cached = tray_events;
                 }
+                store_cached_schedule(&app_handle, schedule_events.clone());
 
                 if is_tray_render_locked(&app_handle) {
                     store_pending_schedule(&app_handle, schedule_events);

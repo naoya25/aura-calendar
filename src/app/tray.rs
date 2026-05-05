@@ -111,10 +111,6 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
 
 /// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
-    if tray_refreshes_paused(app) {
-        return;
-    }
-
     let config = app.state::<ConfigState>();
     let days_to_show = config.0.read().map(|g| g.tray_days_to_show).unwrap_or(4);
 

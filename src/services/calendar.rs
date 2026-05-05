@@ -186,7 +186,7 @@ impl CachedEvent {
 #[cfg(test)]
 fn parse_concurrent_events(ics: &str, now: DateTime<Utc>) -> Vec<CachedEvent> {
     let context = CalendarContext {
-        color: "#9e9e9e".to_string(),
+        emoji: "#9e9e9e".to_string(),
     };
     parse_concurrent_events_for_calendar(ics, now, &context)
 }
@@ -342,6 +342,7 @@ fn collect_relevant_events_for_calendar(
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_recurring_event(
     start: DateTime<Utc>,
     end: Option<DateTime<Utc>>,
@@ -527,7 +528,7 @@ fn classify_url_label(url: &str) -> String {
 fn extract_host(url: &str) -> Option<String> {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let host = after_scheme
-        .split(|c| matches!(c, '/' | '?' | '#'))
+        .split(|c| ['/', '?', '#'].contains(&c))
         .next()
         .unwrap_or("")
         .trim_start_matches("www.");

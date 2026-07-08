@@ -108,6 +108,14 @@ fn current_tray_title(app: &tauri::AppHandle) -> String {
 }
 
 fn refresh_tray_title(app: &tauri::AppHandle) {
+    // トレイの描画がロック中（メニュー表示中）は set_title を呼ばない。
+    // tray-icon crate の TrayIcon::show_menu() はメニューのトラッキングが
+    // 終わるまで内部 RefCell の borrow を保持し続けるため、この間に
+    // set_title (= borrow_mut) を呼ぶと "already borrowed" で panic する。
+    if is_tray_render_locked(app) {
+        return;
+    }
+
     let stealth = app.state::<StealthState>();
     if stealth.is_hidden.load(Ordering::Relaxed) {
         return;
@@ -142,6 +150,14 @@ pub fn toggle_stealth(app: &tauri::AppHandle) {
     } else {
         current_tray_title(app)
     };
+
+    // トレイの描画がロック中（メニュー表示中）は set_title を呼ばない。
+    // refresh_tray_title と同じ理由（tray-icon の show_menu 中は内部 RefCell が
+    // borrow されたままになるため）。is_hidden の状態自体は更新済みなので、
+    // ロックが外れたタイミングの refresh_tray_title で表示に反映される。
+    if is_tray_render_locked(app) {
+        return;
+    }
 
     if let Some(tray) = app.tray_by_id("main-tray") {
         let spaced = format!(" {title}");

@@ -232,7 +232,11 @@ fn collect_relevant_events_for_calendar(
     let mut current_location: Option<String> = None;
     let mut current_description: Option<String> = None;
     let mut current_urls: Vec<String> = Vec::new();
-    let mut events = Vec::new();
+    let mut current_recurrence_id: Option<DateTime<Utc>> = None;
+    // RECURRENCE-ID を持つ override VEVENT が上書きした元オカレンスの開始時刻。
+    // 繰り返し展開側にはこの時刻の予定が変更前として残ってしまうため、後で除外する。
+    let mut overridden_occurrences: HashSet<DateTime<Utc>> = HashSet::new();
+    let mut events: Vec<(CachedEvent, bool)> = Vec::new();
 
     for line in unfold_ical_lines(ics) {
         if line.starts_with("BEGIN:VEVENT") {
@@ -245,6 +249,7 @@ fn collect_relevant_events_for_calendar(
             current_location = None;
             current_description = None;
             current_urls.clear();
+            current_recurrence_id = None;
         } else if line.starts_with("END:VEVENT") {
             if let Some(start) = current_start.take() {
                 let end = current_end
@@ -259,26 +264,41 @@ fn collect_relevant_events_for_calendar(
                     current_description.as_deref(),
                     &current_urls,
                 );
-                if let Some(rrule) = current_rrule.take() {
-                    events.extend(expand_recurring_event(
-                        start,
-                        end,
-                        title,
-                        &rrule,
-                        &current_exdates,
-                        now,
-                        context,
-                        actions,
-                    ));
-                } else {
-                    events.push(CachedEvent {
-                        start,
-                        end,
-                        title,
-                        calendar_emoji: context.emoji.clone(),
-                        actions,
-                    });
+                let recurrence_id = current_recurrence_id.take();
+                if let Some(recurrence_id) = recurrence_id {
+                    overridden_occurrences.insert(recurrence_id);
                 }
+                if let Some(rrule) = current_rrule.take() {
+                    events.extend(
+                        expand_recurring_event(
+                            start,
+                            end,
+                            title,
+                            &rrule,
+                            &current_exdates,
+                            now,
+                            context,
+                            actions,
+                        )
+                        .into_iter()
+                        .map(|event| (event, false)),
+                    );
+                } else {
+                    events.push((
+                        CachedEvent {
+                            start,
+                            end,
+                            title,
+                            calendar_emoji: context.emoji.clone(),
+                            actions,
+                        },
+                        recurrence_id.is_some(),
+                    ));
+                }
+            }
+        } else if line.starts_with("RECURRENCE-ID") {
+            if let Some((_, raw_value)) = line.split_once(':') {
+                current_recurrence_id = parse_datetime(raw_value);
             }
         } else if line.starts_with("DTSTART") {
             current_is_all_day = line.contains("VALUE=DATE");
@@ -338,6 +358,9 @@ fn collect_relevant_events_for_calendar(
 
     events
         .into_iter()
+        // override 自身は残し、繰り返し展開側の「変更前」オカレンスだけ除外する。
+        .filter(|(event, is_override)| *is_override || !overridden_occurrences.contains(&event.start))
+        .map(|(event, _)| event)
         .filter(|event| event.start >= now || event.is_active_at(now))
         .collect()
 }
@@ -986,6 +1009,25 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 5, 1, 11, 45, 0).unwrap();
         let concurrent = parse_concurrent_events(&make_ics(&events), now);
         assert_eq!(concurrent.len(), 2);
+    }
+
+    #[test]
+    fn recurrence_id_override_hides_original_occurrence() {
+        // 繰り返し予定の1回分を RECURRENCE-ID 付き override VEVENT で変更した場合、
+        // 元のオカレンス（変更前）は表示に残さず override（変更後）だけを返す。
+        let events = format!(
+            "BEGIN:VEVENT\r\nDTSTART:20260501T150000Z\r\nDTEND:20260501T153000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nSUMMARY:Weekly Sync\r\nEND:VEVENT\r\n{}",
+            "BEGIN:VEVENT\r\nRECURRENCE-ID:20260501T150000Z\r\nDTSTART:20260501T170000Z\r\nDTEND:20260501T173000Z\r\nSUMMARY:Weekly Sync (Rescheduled)\r\nEND:VEVENT\r\n"
+        );
+        let now = fixed_now(); // 2026-05-01 12:00 UTC
+        let concurrent = parse_concurrent_events(&make_ics(&events), now);
+
+        assert_eq!(concurrent.len(), 1);
+        assert_eq!(concurrent[0].title, "Weekly Sync (Rescheduled)");
+        assert_eq!(
+            concurrent[0].start,
+            Utc.with_ymd_and_hms(2026, 5, 1, 17, 0, 0).unwrap()
+        );
     }
 
     // --- format_title_group ---

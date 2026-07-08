@@ -763,6 +763,22 @@
         </div>
       </div>
 
+      <!-- Open Menu Shortcut -->
+      <div class="setting-block">
+        <span class="setting-label">トレイ表示</span>
+        <div
+          class="shortcut-recorder"
+          id="open-menu-shortcut"
+          tabindex="0"
+          role="button"
+        >
+          <div class="shortcut-keys" id="open-menu-shortcut-keys"></div>
+          <span class="shortcut-hint" id="open-menu-shortcut-hint"
+            >クリックして変更</span
+          >
+        </div>
+      </div>
+
       <!-- Show Title -->
       <div class="setting-block">
         <span class="setting-label">タイトルを表示</span>
@@ -814,7 +830,6 @@
       const { invoke } = window.__TAURI__.core;
 
       let DEFAULTS = null;
-      let stealthShortcutValue = "ctrl+a";
 
       function shortcutToChips(shortcut) {
         return shortcut
@@ -827,11 +842,6 @@
             return `<span class="shortcut-key">${label}</span>`;
           })
           .join("");
-      }
-
-      function renderShortcut(shortcut) {
-        document.getElementById("stealth-shortcut-keys").innerHTML =
-          shortcutToChips(shortcut);
       }
 
       function keyEventToShortcut(event) {
@@ -871,10 +881,17 @@
         return [...modifiers, normalizedKey].join("+");
       }
 
-      (function setupShortcutRecorder() {
-        const recorder = document.getElementById("stealth-shortcut");
-        const hint = document.getElementById("stealth-shortcut-hint");
-        const keys = document.getElementById("stealth-shortcut-keys");
+      // ショートカット記録 UI を1つ生成する。複数のショートカット項目（ステルス切替 /
+      // トレイ表示）で使い回すため、要素 ID の接頭辞と初期値を渡して初期化する。
+      function createShortcutRecorder(idPrefix, initialValue) {
+        const recorder = document.getElementById(idPrefix);
+        const hint = document.getElementById(`${idPrefix}-hint`);
+        const keys = document.getElementById(`${idPrefix}-keys`);
+        let value = initialValue;
+
+        function render() {
+          keys.innerHTML = shortcutToChips(value);
+        }
 
         function startRecording() {
           recorder.classList.add("recording");
@@ -886,8 +903,8 @@
         function stopRecording(newShortcut) {
           recorder.classList.remove("recording");
           hint.textContent = "クリックして変更";
-          if (newShortcut) stealthShortcutValue = newShortcut;
-          renderShortcut(stealthShortcutValue);
+          if (newShortcut) value = newShortcut;
+          render();
         }
 
         recorder.addEventListener("click", () => {
@@ -906,7 +923,26 @@
         recorder.addEventListener("blur", () => {
           if (recorder.classList.contains("recording")) stopRecording(null);
         });
-      })();
+
+        render();
+
+        return {
+          getValue: () => value,
+          setValue: (v) => {
+            value = v;
+            render();
+          },
+        };
+      }
+
+      const stealthShortcutRecorder = createShortcutRecorder(
+        "stealth-shortcut",
+        "ctrl+a",
+      );
+      const openMenuShortcutRecorder = createShortcutRecorder(
+        "open-menu-shortcut",
+        "ctrl+s",
+      );
 
       function showToast(message, isError = false) {
         const toast = document.getElementById("toast");
@@ -1204,7 +1240,11 @@ ${currentTemplate}
             },
             refresh_interval_seconds: refreshInterval,
             display_interval_seconds: displayInterval,
-            stealth_shortcut: stealthShortcutValue || DEFAULTS.stealth_shortcut,
+            stealth_shortcut:
+              stealthShortcutRecorder.getValue() || DEFAULTS.stealth_shortcut,
+            open_menu_shortcut:
+              openMenuShortcutRecorder.getValue() ||
+              DEFAULTS.open_menu_shortcut,
             tray_days_to_show: trayDaysToShow,
           };
 
@@ -1237,9 +1277,12 @@ ${currentTemplate}
             config.display_interval_seconds;
           document.getElementById("tray-days-to-show").value =
             config.tray_days_to_show ?? DEFAULTS.tray_days_to_show;
-          stealthShortcutValue =
-            config.stealth_shortcut ?? DEFAULTS.stealth_shortcut;
-          renderShortcut(stealthShortcutValue);
+          stealthShortcutRecorder.setValue(
+            config.stealth_shortcut ?? DEFAULTS.stealth_shortcut,
+          );
+          openMenuShortcutRecorder.setValue(
+            config.open_menu_shortcut ?? DEFAULTS.open_menu_shortcut,
+          );
         } catch (e) {
           showToast("設定の読み込みに失敗しました: " + e, true);
         }

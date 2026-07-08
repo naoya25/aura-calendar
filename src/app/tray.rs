@@ -157,9 +157,33 @@ pub fn register_stealth_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Resu
         .map_err(|e| e.to_string())
 }
 
+pub fn register_open_menu_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|e| e.to_string())
+}
+
 pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
     if let Err(e) = app.global_shortcut().unregister_all() {
         eprintln!("failed to unregister shortcuts: {e}");
+    }
+}
+
+/// グローバルショートカットからトレイメニューを開く。実クリック時の Down イベントと
+/// 同じロック処理を行ってから `performClick` 相当の `show_menu` を呼ぶ。
+pub fn open_tray_menu(app: &tauri::AppHandle) {
+    if is_tray_render_locked(app) {
+        clear_tray_render_lock(app);
+        apply_pending_tray_menu(app);
+        refresh_tray_title(app);
+    } else {
+        lock_tray_render(app);
+    }
+
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Err(e) = tray.with_inner_tray_icon(|inner| inner.show_menu()) {
+            eprintln!("failed to open tray menu: {e}");
+        }
     }
 }
 
@@ -460,6 +484,8 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
         .unwrap_or_else(|e| eprintln!("failed to register stealth shortcut: {e}"));
+    register_open_menu_shortcut(app.handle(), &config.open_menu_shortcut)
+        .unwrap_or_else(|e| eprintln!("failed to register open menu shortcut: {e}"));
 
     // ── 取得タスク（長周期）──────────────────────────────────────────
     {

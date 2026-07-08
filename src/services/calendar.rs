@@ -359,7 +359,9 @@ fn collect_relevant_events_for_calendar(
     events
         .into_iter()
         // override 自身は残し、繰り返し展開側の「変更前」オカレンスだけ除外する。
-        .filter(|(event, is_override)| *is_override || !overridden_occurrences.contains(&event.start))
+        .filter(|(event, is_override)| {
+            *is_override || !overridden_occurrences.contains(&event.start)
+        })
         .map(|(event, _)| event)
         .filter(|event| event.start >= now || event.is_active_at(now))
         .collect()

@@ -2,14 +2,35 @@ pub mod commands;
 pub mod tray;
 
 use tauri::Manager;
-use tauri_plugin_global_shortcut::ShortcutState;
+use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
+
+/// 押されたショートカットが設定文字列と一致するかを、正規化した ID で比較する。
+fn shortcut_matches(pressed: &Shortcut, configured: &str) -> bool {
+    configured
+        .parse::<Shortcut>()
+        .map(|s| s.id() == pressed.id())
+        .unwrap_or(false)
+}
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+
+                    let config = app.state::<commands::ConfigState>();
+                    let (stealth_shortcut, open_menu_shortcut) = config
+                        .0
+                        .read()
+                        .map(|g| (g.stealth_shortcut.clone(), g.open_menu_shortcut.clone()))
+                        .unwrap_or_default();
+
+                    if shortcut_matches(shortcut, &open_menu_shortcut) {
+                        tray::open_tray_menu(app);
+                    } else if shortcut_matches(shortcut, &stealth_shortcut) {
                         tray::toggle_stealth(app);
                     }
                 })

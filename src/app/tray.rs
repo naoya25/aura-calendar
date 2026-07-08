@@ -27,6 +27,11 @@ pub struct StealthState {
     pub is_hidden: Arc<AtomicBool>,
 }
 
+/// `open_tray_menu` が show_menu() のブロッキング呼び出し中かどうか。
+/// true の間に再度 open_tray_menu が呼ばれた場合（^+S の2度押し）は
+/// show_menu を再入させず、メニューを閉じるだけにする。
+pub struct TrayMenuTrackingState(pub AtomicBool);
+
 pub struct TrayPresentationState {
     pub render_lock_until: Mutex<Option<Instant>>,
     pub pending_schedule: Mutex<Option<Vec<CachedEvent>>>,
@@ -107,27 +112,47 @@ fn current_tray_title(app: &tauri::AppHandle) -> String {
     }
 }
 
-fn refresh_tray_title(app: &tauri::AppHandle) {
-    // トレイの描画がロック中（メニュー表示中）は set_title を呼ばない。
-    // tray-icon crate の TrayIcon::show_menu() はメニューのトラッキングが
-    // 終わるまで内部 RefCell の borrow を保持し続けるため、この間に
-    // set_title (= borrow_mut) を呼ぶと "already borrowed" で panic する。
-    if is_tray_render_locked(app) {
-        return;
+/// ロック確認と実際のトレイ更新（set_title / set_menu）を同一の main スレッド
+/// タスクとして実行する。
+///
+/// 背景スレッドで `is_tray_render_locked` を確認してから `tray.set_title` 等を
+/// 呼ぶと、確認から実際に main スレッドへ dispatch されるまでの間にロックの
+/// 状態が変わりうる（TOCTOU）。tray-icon crate の `TrayIcon::show_menu()` は
+/// メニューのトラッキングが終わるまで内部 RefCell の borrow を保持し続けるため、
+/// この隙間で set_title / set_menu（= borrow_mut）が割り込むと
+/// "already borrowed" で panic する。確認自体を main スレッド上・更新呼び出しの
+/// 直前（同一クロージャ内、途中で他のタスクに割り込まれない）で行うことで
+/// この隙間を無くす。
+fn run_if_unlocked<F>(app: &tauri::AppHandle, action: F)
+where
+    F: FnOnce(&tauri::AppHandle) + Send + 'static,
+{
+    let app_handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || {
+        if is_tray_render_locked(&app_handle) {
+            return;
+        }
+        action(&app_handle);
+    }) {
+        eprintln!("failed to schedule tray update: {e}");
     }
+}
 
+fn refresh_tray_title(app: &tauri::AppHandle) {
     let stealth = app.state::<StealthState>();
     if stealth.is_hidden.load(Ordering::Relaxed) {
         return;
     }
 
     let title = current_tray_title(app);
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        let spaced = format!(" {title}");
-        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
-            eprintln!("failed to refresh tray title: {e}");
+    run_if_unlocked(app, move |app| {
+        if let Some(tray) = app.tray_by_id("main-tray") {
+            let spaced = format!(" {title}");
+            if let Err(e) = tray.set_title(Some(spaced.as_str())) {
+                eprintln!("failed to refresh tray title: {e}");
+            }
         }
-    }
+    });
 }
 
 fn apply_pending_tray_menu(app: &tauri::AppHandle) {
@@ -151,20 +176,16 @@ pub fn toggle_stealth(app: &tauri::AppHandle) {
         current_tray_title(app)
     };
 
-    // トレイの描画がロック中（メニュー表示中）は set_title を呼ばない。
-    // refresh_tray_title と同じ理由（tray-icon の show_menu 中は内部 RefCell が
-    // borrow されたままになるため）。is_hidden の状態自体は更新済みなので、
-    // ロックが外れたタイミングの refresh_tray_title で表示に反映される。
-    if is_tray_render_locked(app) {
-        return;
-    }
-
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        let spaced = format!(" {title}");
-        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
-            eprintln!("failed to update tray title: {e}");
+    // is_hidden の状態自体は既に更新済みなので、ロック中で下の更新をスキップ
+    // しても、ロックが外れたタイミングの refresh_tray_title で表示に反映される。
+    run_if_unlocked(app, move |app| {
+        if let Some(tray) = app.tray_by_id("main-tray") {
+            let spaced = format!(" {title}");
+            if let Err(e) = tray.set_title(Some(spaced.as_str())) {
+                eprintln!("failed to update tray title: {e}");
+            }
         }
-    }
+    });
 }
 
 pub fn register_stealth_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
@@ -185,9 +206,29 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
     }
 }
 
-/// グローバルショートカットからトレイメニューを開く。実クリック時の Down イベントと
-/// 同じロック処理を行ってから `performClick` 相当の `show_menu` を呼ぶ。
+/// グローバルショートカットでトレイメニューの開閉をトグルする。
+///
+/// 1回目の呼び出し: 実クリック時の Down イベントと同じロック処理を行ってから
+/// `performClick` 相当の `show_menu` を呼ぶ。`show_menu` は NSMenu のトラッキングが
+/// 終わるまで main スレッドをブロックし続ける。
+///
+/// この「ブロック中」に ^+S がもう一度押されると、グローバルショートカットの
+/// ハンドラは Carbon 側のイベント配送の都合で main スレッド上に再入する
+/// （nested run loop が main run loop の hotkey ソースも pump するため）。
+/// その2回目の呼び出しで通常の unlock 処理
+/// （clear_tray_render_lock → apply_pending_tray_menu → refresh_tray_title）を
+/// 実行してしまうと、1回目の show_menu がまだ tray-icon 内部の RefCell を
+/// borrow している最中に set_title（= borrow_mut）が割り込み panic する。
+/// そのため2回目は bookkeeping を一切行わず、`close_tray_menu` で
+/// メニューを閉じるだけにする（= ^+S の「開いていたら閉じる」トグル挙動）。
 pub fn open_tray_menu(app: &tauri::AppHandle) {
+    let tracking = app.state::<TrayMenuTrackingState>();
+    if tracking.0.swap(true, Ordering::AcqRel) {
+        // 再入（2回目の押下）: show_menu の呼び出しは行わず閉じるだけ。
+        close_tray_menu(app);
+        return;
+    }
+
     if is_tray_render_locked(app) {
         clear_tray_render_lock(app);
         apply_pending_tray_menu(app);
@@ -201,7 +242,45 @@ pub fn open_tray_menu(app: &tauri::AppHandle) {
             eprintln!("failed to open tray menu: {e}");
         }
     }
+
+    // show_menu() が返った時点で内部 RefCell の borrow は解放済み。
+    // メニューが閉じた直後の状態（選択 / cancelTracking / 単純な dismiss の
+    // いずれでも）を確実に反映する。
+    tracking.0.store(false, Ordering::Release);
+    clear_tray_render_lock(app);
+    apply_pending_tray_menu(app);
+    refresh_tray_title(app);
 }
+
+/// 現在表示中のトレイメニューを `NSMenu.cancelTracking()` で閉じる。
+///
+/// tray-icon / muda はメニューを programmatic に閉じる公開APIを持たないため、
+/// 標準・公開の AppKit API である `NSMenu.cancelTracking()`
+/// (https://developer.apple.com/documentation/appkit/nsmenu/canceltracking())
+/// を objc2 経由で直接呼ぶ。`NSStatusItem.menu()` / `NSMenu.cancelTracking()` は
+/// いずれも `self.tray.borrow()`（immutable）にしかアクセスしない
+/// `TrayIcon::ns_status_item()` を経由するため、1回目の show_menu が保持する
+/// immutable borrow と衝突しない（RefCell は複数の immutable borrow を許容する）。
+#[cfg(target_os = "macos")]
+fn close_tray_menu(app: &tauri::AppHandle) {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return;
+    };
+    if let Err(e) = tray.with_inner_tray_icon(|inner| {
+        if let Some(status_item) = inner.ns_status_item() {
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                if let Some(menu) = status_item.menu(mtm) {
+                    menu.cancelTracking();
+                }
+            }
+        }
+    }) {
+        eprintln!("failed to close tray menu: {e}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn close_tray_menu(_app: &tauri::AppHandle) {}
 
 /// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
@@ -283,11 +362,13 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
 
     match Menu::with_items(app, &refs) {
         Ok(menu) => {
-            if let Some(tray) = app.tray_by_id("main-tray") {
-                if let Err(e) = tray.set_menu(Some(menu)) {
-                    eprintln!("failed to set tray menu: {e}");
+            run_if_unlocked(app, move |app| {
+                if let Some(tray) = app.tray_by_id("main-tray") {
+                    if let Err(e) = tray.set_menu(Some(menu)) {
+                        eprintln!("failed to set tray menu: {e}");
+                    }
                 }
-            }
+            });
         }
         Err(e) => eprintln!("failed to build tray menu: {e}"),
     }
@@ -413,6 +494,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(StealthState {
         is_hidden: Arc::clone(&is_hidden),
     });
+    app.manage(TrayMenuTrackingState(AtomicBool::new(false)));
     app.manage(TrayPresentationState {
         render_lock_until: Mutex::new(None),
         pending_schedule: Mutex::new(None),

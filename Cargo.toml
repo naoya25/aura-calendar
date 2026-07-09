@@ -1,6 +1,6 @@
 [package]
 name = "aura-calendar"
-version = "1.0.0"
+version = "1.3.0"
 edition = "2021"
 
 [dependencies]
@@ -19,6 +19,17 @@ minijinja = "2"
 webbrowser = "0.8"
 urlencoding = "2"
 unicode-width = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# トレイメニュー表示中に ^+S を再度押された際、tray-icon crate に
+# メニューを閉じる公開APIが無いため NSMenu.cancelTracking() を直接呼ぶ。
+# また、メニューの開閉状態を正確に追跡するため
+# NSMenuDidBeginTrackingNotification / NSMenuDidEndTrackingNotification を
+# NSNotificationCenter 経由で購読する（block ベースの API のため block2 も必要）。
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSMenu", "NSStatusItem"] }
+objc2-foundation = { version = "0.3", features = ["NSNotification", "NSOperation", "NSString", "block2"] }
+block2 = "0.6"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }

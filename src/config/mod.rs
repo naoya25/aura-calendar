@@ -23,6 +23,8 @@ pub struct AppConfig {
     pub display_interval_seconds: u64,
     #[serde(default = "default_stealth_shortcut")]
     pub stealth_shortcut: String,
+    #[serde(default = "default_open_menu_shortcut")]
+    pub open_menu_shortcut: String,
     #[serde(default = "default_tray_days_to_show")]
     pub tray_days_to_show: u64,
 }
@@ -50,6 +52,7 @@ impl Default for AppConfig {
             refresh_interval_seconds: DEFAULT_REFRESH_INTERVAL_SECONDS,
             display_interval_seconds: DEFAULT_DISPLAY_INTERVAL_SECONDS,
             stealth_shortcut: default_stealth_shortcut(),
+            open_menu_shortcut: default_open_menu_shortcut(),
             tray_days_to_show: DEFAULT_TRAY_DAYS_TO_SHOW,
         }
     }
@@ -145,6 +148,8 @@ struct RawAppConfig {
     display_interval_seconds: u64,
     #[serde(default = "default_stealth_shortcut")]
     stealth_shortcut: String,
+    #[serde(default = "default_open_menu_shortcut")]
+    open_menu_shortcut: String,
     #[serde(default = "default_tray_days_to_show")]
     tray_days_to_show: u64,
 }
@@ -230,6 +235,7 @@ impl From<RawAppConfig> for LoadedConfig {
                 refresh_interval_seconds,
                 display_interval_seconds,
                 stealth_shortcut: raw.stealth_shortcut,
+                open_menu_shortcut: raw.open_menu_shortcut,
                 tray_days_to_show,
             },
             needs_normalization,
@@ -268,6 +274,10 @@ fn default_display_interval_seconds() -> u64 {
 
 fn default_stealth_shortcut() -> String {
     "ctrl+a".to_string()
+}
+
+fn default_open_menu_shortcut() -> String {
+    "ctrl+s".to_string()
 }
 
 fn default_tray_days_to_show() -> u64 {
@@ -373,6 +383,42 @@ mod tests {
         assert_eq!(config.calendars.len(), 1);
         assert!(config.calendars[0].emoji.is_some());
         assert!(raw_config.contains("\"emoji\""));
+
+        let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
+    }
+
+    #[test]
+    fn default_shortcuts_should_not_collide() {
+        let config = AppConfig::default();
+
+        assert_ne!(config.stealth_shortcut, config.open_menu_shortcut);
+    }
+
+    #[test]
+    fn load_or_create_should_backfill_open_menu_shortcut_when_missing() {
+        let path = temp_config_path();
+        fs::create_dir_all(path.parent().expect("temp path should have parent"))
+            .expect("temp directory should be creatable");
+        fs::write(
+            &path,
+            r#"{
+    "calendars": [],
+    "display": {
+        "normal_format": "{minutes_until}分後 {title}",
+        "stealth_format": "***",
+        "show_title": true
+    },
+    "refresh_interval_seconds": 300,
+    "display_interval_seconds": 30,
+    "stealth_shortcut": "ctrl+a"
+}
+"#,
+        )
+        .expect("seed config should be writable");
+
+        let config = AppConfig::load_or_create_at(&path).expect("config should load");
+
+        assert_eq!(config.open_menu_shortcut, "ctrl+s");
 
         let _ = fs::remove_dir_all(path.parent().expect("temp path should have parent"));
     }

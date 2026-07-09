@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use chrono::{Datelike, Duration, Local, Timelike, Utc};
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::{App, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::broadcast;
@@ -26,6 +26,19 @@ pub struct AllowExit(pub Arc<AtomicBool>);
 pub struct StealthState {
     pub is_hidden: Arc<AtomicBool>,
 }
+
+/// トレイメニューが現在開いている（NSMenu がトラッキング中）かどうか。
+///
+/// 実測の結果、`TrayIcon::show_menu()`（内部で `performClick` を呼ぶ）は
+/// グローバルショートカット経由で呼んだ場合ブロックしない（呼び出しはすぐ
+/// 返り、メニューはそれとは無関係に表示され続ける）ことが分かった。
+/// そのため「呼び出しがブロック中かどうか」を自前のフラグで推測するのではなく、
+/// NSMenuDidBeginTrackingNotification / NSMenuDidEndTrackingNotification
+/// （NSNotificationCenter 経由）を購読し、AppKit が実際に報告する開閉状態を
+/// そのまま真偽値として保持する。ESC・外クリックによる dismiss でも
+/// DidEndTracking は必ず飛ぶため、クリックイベントの Down/Up を見ていた
+/// 旧実装より正確に状態を追跡できる。
+pub struct TrayMenuOpenState(pub AtomicBool);
 
 pub struct TrayPresentationState {
     pub render_lock_until: Mutex<Option<Instant>>,
@@ -107,6 +120,34 @@ fn current_tray_title(app: &tauri::AppHandle) -> String {
     }
 }
 
+/// ロック確認と実際のトレイ更新（set_title / set_menu）を同一の main スレッド
+/// タスクとして実行する。
+///
+/// 背景スレッドで `is_tray_render_locked` を確認してから `tray.set_title` 等を
+/// 呼ぶと、確認から実際に main スレッドへ dispatch されるまでの間にロックの
+/// 状態が変わりうる（TOCTOU）。tray-icon crate の `TrayIcon::show_menu()` /
+/// `set_menu` / `set_title` はいずれも内部 `Rc<RefCell<..>>` を経由するため、
+/// このロックが有効な区間（= NSMenu が実際にトラッキング中の区間。
+/// `install_menu_tracking_observer` が NSMenuDidBeginTracking /
+/// DidEndTracking 通知を見て張り直す）と set_title / set_menu（= borrow_mut）
+/// の呼び出しが重なると "already borrowed" で panic しうる。確認自体を main
+/// スレッド上・更新呼び出しの直前（同一クロージャ内、途中で他のタスクに
+/// 割り込まれない）で行うことでこの隙間を無くす。
+fn run_if_unlocked<F>(app: &tauri::AppHandle, action: F)
+where
+    F: FnOnce(&tauri::AppHandle) + Send + 'static,
+{
+    let app_handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || {
+        if is_tray_render_locked(&app_handle) {
+            return;
+        }
+        action(&app_handle);
+    }) {
+        eprintln!("failed to schedule tray update: {e}");
+    }
+}
+
 fn refresh_tray_title(app: &tauri::AppHandle) {
     let stealth = app.state::<StealthState>();
     if stealth.is_hidden.load(Ordering::Relaxed) {
@@ -114,12 +155,14 @@ fn refresh_tray_title(app: &tauri::AppHandle) {
     }
 
     let title = current_tray_title(app);
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        let spaced = format!(" {title}");
-        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
-            eprintln!("failed to refresh tray title: {e}");
+    run_if_unlocked(app, move |app| {
+        if let Some(tray) = app.tray_by_id("main-tray") {
+            let spaced = format!(" {title}");
+            if let Err(e) = tray.set_title(Some(spaced.as_str())) {
+                eprintln!("failed to refresh tray title: {e}");
+            }
         }
-    }
+    });
 }
 
 fn apply_pending_tray_menu(app: &tauri::AppHandle) {
@@ -143,15 +186,46 @@ pub fn toggle_stealth(app: &tauri::AppHandle) {
         current_tray_title(app)
     };
 
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        let spaced = format!(" {title}");
-        if let Err(e) = tray.set_title(Some(spaced.as_str())) {
-            eprintln!("failed to update tray title: {e}");
+    // is_hidden の状態自体は既に更新済みなので、ロック中で下の更新をスキップ
+    // しても、ロックが外れたタイミングの refresh_tray_title で表示に反映される。
+    run_if_unlocked(app, move |app| {
+        if let Some(tray) = app.tray_by_id("main-tray") {
+            let spaced = format!(" {title}");
+            if let Err(e) = tray.set_title(Some(spaced.as_str())) {
+                eprintln!("failed to update tray title: {e}");
+            }
         }
-    }
+    });
+}
+
+fn open_menu_shortcut_string(app: &tauri::AppHandle) -> String {
+    app.state::<ConfigState>()
+        .0
+        .read()
+        .map(|g| g.open_menu_shortcut.clone())
+        .unwrap_or_default()
+}
+
+/// メニュー最下部の「閉じる」項目。accelerator に open_menu_shortcut を
+/// 割り当てることで、メニュー表示中の同キー押下がネイティブの
+/// keyEquivalent として項目選択（= メニューを閉じる）になる。
+///
+/// メニュー表示中は Carbon がグローバルホットキーを配送しない
+/// （閉じた瞬間にまとめて再生され開き直しになる）ため、表示中だけ
+/// グローバル登録を外し、閉じる操作はこの keyEquivalent に担わせる。
+fn close_menu_item(app: &tauri::AppHandle) -> Option<MenuItem<tauri::Wry>> {
+    let shortcut = open_menu_shortcut_string(app);
+    let accelerator = (!shortcut.is_empty()).then_some(shortcut);
+    MenuItem::with_id(app, "close_menu", "閉じる", true, accelerator).ok()
 }
 
 pub fn register_stealth_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|e| e.to_string())
+}
+
+pub fn register_open_menu_shortcut(app: &tauri::AppHandle, shortcut: &str) -> Result<(), String> {
     app.global_shortcut()
         .register(shortcut)
         .map_err(|e| e.to_string())
@@ -162,6 +236,227 @@ pub fn unregister_all_shortcuts(app: &tauri::AppHandle) {
         eprintln!("failed to unregister shortcuts: {e}");
     }
 }
+
+/// グローバルショートカットでトレイメニューの開閉をトグルする。
+///
+/// `TrayMenuOpenState`（NSMenuDidBeginTracking / DidEndTracking 通知で維持される
+/// 実際の開閉状態）を見て、開いていれば `close_tray_menu`、閉じていれば
+/// `show_menu` を呼ぶだけ。show_menu 自体がブロックするかどうかに一切依存しない。
+/// クロージャを「きれいな main ループの次のターン」で実行する。
+///
+/// Carbon のグローバルホットキーコールバックや performClick のスタック内から
+/// 同期的にトレイ操作（show_menu / set_title 等）を行うと、AppKit が正規の
+/// メニュートラッキングセッションを張れない（Begin/End が空発火してゾンビ
+/// メニューが残る）・tray-icon 内部 RefCell の borrow と衝突して panic する、
+/// の両方が起きる。いったん別スレッドへ逃がしてから run_on_main_thread で
+/// 戻すことで、必ずイベントループ経由の新しいターンで実行させる。
+fn defer_on_main<F>(app: &tauri::AppHandle, action: F)
+where
+    F: FnOnce(&tauri::AppHandle) + Send + 'static,
+{
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let inner = app.clone();
+        if let Err(e) = app.run_on_main_thread(move || action(&inner)) {
+            eprintln!("failed to defer tray action to main thread: {e}");
+        }
+    });
+}
+
+pub fn open_tray_menu(app: &tauri::AppHandle) {
+    let open_state = app.state::<TrayMenuOpenState>();
+    let is_open = open_state.0.load(Ordering::Acquire);
+    if is_open {
+        // メニュー表示中は main ループがトラッキングモードでブロックしており
+        // 遅延ディスパッチは届かないため、ホットキーコールバックから直接閉じる。
+        // close_tray_menu は tray-icon の RefCell borrow を保持しないので安全。
+        close_tray_menu(app);
+        return;
+    }
+    defer_on_main(app, |app| {
+        let open_state = app.state::<TrayMenuOpenState>();
+        if open_state.0.load(Ordering::Acquire) {
+            return;
+        }
+        open_tray_menu_on_main(app);
+    });
+}
+
+/// トレイメニューを popUpMenuPositioningItem で表示する（main スレッド・
+/// きれいなスタックから呼ぶこと）。
+///
+/// tray-icon の `show_menu()`（NSStatusBarButton.performClick）はホットキー等の
+/// 合成コンテキストから呼ぶと正規のメニュートラッキングセッションが張られず、
+/// NSMenuDidBegin/EndTracking が瞬時に空発火する「ゾンビメニュー」になる
+/// （表示は残るのに cancelTracking も ESC も効かない）。
+/// `NSMenu.popUpMenuPositioningItem:atLocation:inView:` はプロセス内で本物の
+/// トラッキングセッションを張る公開 API で、閉じるまでブロックし、
+/// Begin/End 通知・cancelTracking が正しく機能する。
+#[cfg(target_os = "macos")]
+fn open_tray_menu_on_main(app: &tauri::AppHandle) {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return;
+    };
+
+    // メニュー表示中は Carbon がグローバルホットキーを配送せず、閉じた瞬間に
+    // 溜まった押下がまとめて再生されて開き直しになる。表示中はグローバル登録を
+    // 外し、押下を素の keyDown としてメニューに流して「閉じる」項目の
+    // keyEquivalent に処理させる（メニューが閉じたら下で再登録する）。
+    let shortcut = open_menu_shortcut_string(app);
+    if !shortcut.is_empty() {
+        if let Err(e) = app.global_shortcut().unregister(shortcut.as_str()) {
+            eprintln!("failed to suspend open-menu shortcut: {e}");
+        }
+    }
+    // ns_status_item() は tray-icon 内部 RefCell を一時 borrow して owned な
+    // Retained を返すため、以降（popUp のブロック中を含め）RefCell の borrow は
+    // 保持されず、表示中の set_title（borrow_mut）と衝突しない。
+    if let Err(e) = tray.with_inner_tray_icon(|inner| {
+        use objc2_foundation::NSPoint;
+
+        let Some(status_item) = inner.ns_status_item() else {
+            return;
+        };
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        let (Some(button), Some(menu)) = (status_item.button(mtm), status_item.menu(mtm)) else {
+            return;
+        };
+
+        let location = NSPoint {
+            x: 0.0,
+            y: button.bounds().size.height + 4.0,
+        };
+        let view: &objc2_app_kit::NSView = &button;
+        // ここでブロックする（メニューが閉じるまで戻らない）
+        menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(view));
+    }) {
+        eprintln!("failed to open tray menu: {e}");
+    }
+
+    // メニューが閉じたのでグローバルショートカットを復帰させる
+    if !shortcut.is_empty() {
+        if let Err(e) = register_open_menu_shortcut(app, &shortcut) {
+            eprintln!("failed to resume open-menu shortcut: {e}");
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_tray_menu_on_main(app: &tauri::AppHandle) {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Err(e) = tray.with_inner_tray_icon(|inner| inner.show_menu()) {
+            eprintln!("failed to open tray menu: {e}");
+        }
+    }
+}
+
+/// 現在表示中のトレイメニューを `NSMenu.cancelTracking()` で閉じる。
+///
+/// tray-icon / muda はメニューを programmatic に閉じる公開APIを持たないため、
+/// 標準・公開の AppKit API である `NSMenu.cancelTracking()`
+/// (https://developer.apple.com/documentation/appkit/nsmenu/canceltracking())
+/// を objc2 経由で直接呼ぶ。`NSStatusItem.menu()` / `NSMenu.cancelTracking()` は
+/// いずれも `self.tray.borrow()`（immutable）にしかアクセスしない
+/// `TrayIcon::ns_status_item()` を経由するため、tray-icon 内部の RefCell が
+/// 他所で immutable borrow されていても衝突しない
+/// （RefCell は複数の immutable borrow を許容する）。
+#[cfg(target_os = "macos")]
+fn close_tray_menu(app: &tauri::AppHandle) {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return;
+    };
+    if let Err(e) = tray.with_inner_tray_icon(|inner| {
+        let Some(status_item) = inner.ns_status_item() else {
+            return;
+        };
+        let Some(mtm) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        if let Some(menu) = status_item.menu(mtm) {
+            menu.cancelTracking();
+        }
+    }) {
+        eprintln!("failed to close tray menu: {e}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn close_tray_menu(_app: &tauri::AppHandle) {}
+
+/// NSMenuDidBeginTrackingNotification / NSMenuDidEndTrackingNotification を
+/// NSNotificationCenter 経由で購読し、`TrayMenuOpenState` とトレイ描画ロック
+/// （`TrayPresentationState`）を実際のメニュー開閉に同期させる。
+///
+/// object（どの NSMenu か）でのフィルタは行わず、プロセス内のあらゆる NSMenu の
+/// begin/end tracking をトレイメニューの開閉として扱う。このアプリのネイティブ
+/// メニューはトレイのドロップダウンのみなので通常は問題にならない
+/// （設定画面は WKWebView で、テキスト欄の右クリックなど WebKit 側のネイティブ
+/// context menu が万一巻き込まれても、影響はトグル状態の一時的なズレに留まり
+/// クラッシュはしない）。
+///
+/// `rebuild_tray_menu` は呼び出すたびに新しい NSMenu インスタンスを作って
+/// `set_menu` で差し替えるため、特定の NSMenu オブジェクトを覚えておいて
+/// フィルタする設計は「差し替え後に古いインスタンスしか監視できていない」
+/// 状態を生みやすい。object なしのグローバル購読はその問題を構造的に避けられる。
+#[cfg(target_os = "macos")]
+fn install_menu_tracking_observer(app: &tauri::AppHandle) {
+    use objc2_app_kit::{NSMenuDidBeginTrackingNotification, NSMenuDidEndTrackingNotification};
+    use objc2_foundation::NSNotificationCenter;
+
+    let center = NSNotificationCenter::defaultCenter();
+
+    let app_begin = app.clone();
+    let begin_block = block2::RcBlock::new(
+        move |_notif: std::ptr::NonNull<objc2_foundation::NSNotification>| {
+            let open_state = app_begin.state::<TrayMenuOpenState>();
+            open_state.0.store(true, Ordering::Release);
+            lock_tray_render(&app_begin);
+        },
+    );
+    unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSMenuDidBeginTrackingNotification),
+            None,
+            None,
+            &begin_block,
+        );
+    }
+    // NSNotificationCenter が block を内部で保持し続けるため、登録後は
+    // Rust 側の RcBlock を明示的に leak してプロセス終了まで生存させる
+    // （このオブザーバはアプリ終了まで解除しない前提）。
+    std::mem::forget(begin_block);
+
+    let app_end = app.clone();
+    let end_block = block2::RcBlock::new(
+        move |_notif: std::ptr::NonNull<objc2_foundation::NSNotification>| {
+            let open_state = app_end.state::<TrayMenuOpenState>();
+            open_state.0.store(false, Ordering::Release);
+            // この通知は performClick のスタック内（= tray-icon の RefCell が
+            // borrow されたまま）で同期発火するため、set_title / set_menu に
+            // つながる後処理はスタックが巻き戻った後のターンに遅延させる。
+            // ロック解除も同じ遅延ターンで行い、それまで他の更新を弾く。
+            defer_on_main(&app_end, |app| {
+                clear_tray_render_lock(app);
+                apply_pending_tray_menu(app);
+                refresh_tray_title(app);
+            });
+        },
+    );
+    unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(NSMenuDidEndTrackingNotification),
+            None,
+            None,
+            &end_block,
+        );
+    }
+    std::mem::forget(end_block);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn install_menu_tracking_observer(_app: &tauri::AppHandle) {}
 
 /// n日分の予定 + Preferences / Quit を含むトレイメニューを再構築してトレイに適用する。
 pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
@@ -238,16 +533,21 @@ pub fn rebuild_tray_menu(app: &tauri::AppHandle, schedule: &[CachedEvent]) {
     if let Ok(quit) = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>) {
         all_items.push(Box::new(quit));
     }
+    if let Some(close) = close_menu_item(app) {
+        all_items.push(Box::new(close));
+    }
 
     let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = all_items.iter().map(|b| b.as_ref()).collect();
 
     match Menu::with_items(app, &refs) {
         Ok(menu) => {
-            if let Some(tray) = app.tray_by_id("main-tray") {
-                if let Err(e) = tray.set_menu(Some(menu)) {
-                    eprintln!("failed to set tray menu: {e}");
+            run_if_unlocked(app, move |app| {
+                if let Some(tray) = app.tray_by_id("main-tray") {
+                    if let Err(e) = tray.set_menu(Some(menu)) {
+                        eprintln!("failed to set tray menu: {e}");
+                    }
                 }
-            }
+            });
         }
         Err(e) => eprintln!("failed to build tray menu: {e}"),
     }
@@ -373,6 +673,7 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(StealthState {
         is_hidden: Arc::clone(&is_hidden),
     });
+    app.manage(TrayMenuOpenState(AtomicBool::new(false)));
     app.manage(TrayPresentationState {
         render_lock_until: Mutex::new(None),
         pending_schedule: Mutex::new(None),
@@ -387,18 +688,20 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(AllowExit(Arc::clone(&allow_exit)));
 
     // 初期メニュー（予定取得前）
-    let initial_menu = Menu::with_items(
-        app,
-        &[
-            &MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)?,
-            &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
-        ],
-    )?;
+    let initial_close = close_menu_item(&app.handle().clone());
+    let mut initial_items: Vec<&dyn IsMenuItem<tauri::Wry>> = Vec::new();
+    let pref_item = MenuItem::with_id(app, "preferences", "Preferences...", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    initial_items.push(&pref_item);
+    initial_items.push(&quit_item);
+    if let Some(close) = initial_close.as_ref() {
+        initial_items.push(close);
+    }
+    let initial_menu = Menu::with_items(app, &initial_items)?;
 
     let initial_title = config.normal_title();
 
     let app_handle_menu = app.handle().clone();
-    let app_handle_tray = app.handle().clone();
     app.on_menu_event(move |_, event| match event.id.as_ref() {
         "preferences" => {
             clear_tray_render_lock(&app_handle_menu);
@@ -428,6 +731,11 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // 実クリックでのトレイ描画ロックの set/clear は、以前はここの
+    // on_tray_icon_event（Down/Up クリック）で toggle していたが、
+    // install_menu_tracking_observer が購読する NSMenuDidBeginTracking /
+    // DidEndTracking 通知に一本化した（ESC・外クリックでの dismiss でも
+    // 確実にクリアされるため、クリックイベントのみを見るより正確）。
     TrayIconBuilder::with_id("main-tray")
         .icon(menu_bar_icon())
         .icon_as_template(false)
@@ -435,31 +743,14 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("AuraCalendar")
         .menu(&initial_menu)
         .show_menu_on_left_click(true)
-        .on_tray_icon_event(move |_, event| {
-            if let TrayIconEvent::Click {
-                button,
-                button_state,
-                ..
-            } = event
-            {
-                if button == MouseButton::Left
-                    && (button_state == MouseButtonState::Down
-                        || button_state == MouseButtonState::Up)
-                {
-                    if is_tray_render_locked(&app_handle_tray) {
-                        clear_tray_render_lock(&app_handle_tray);
-                        apply_pending_tray_menu(&app_handle_tray);
-                        refresh_tray_title(&app_handle_tray);
-                    } else {
-                        lock_tray_render(&app_handle_tray);
-                    }
-                }
-            }
-        })
         .build(app)?;
+
+    install_menu_tracking_observer(app.handle());
 
     register_stealth_shortcut(app.handle(), &config.stealth_shortcut)
         .unwrap_or_else(|e| eprintln!("failed to register stealth shortcut: {e}"));
+    register_open_menu_shortcut(app.handle(), &config.open_menu_shortcut)
+        .unwrap_or_else(|e| eprintln!("failed to register open menu shortcut: {e}"));
 
     // ── 取得タスク（長周期）──────────────────────────────────────────
     {

@@ -661,6 +661,9 @@ fn resolve_event_action_target(app: &tauri::AppHandle, menu_id: &str) -> Option<
 }
 
 pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
     let config = AppConfig::load_or_create()?;
     let config_arc = Arc::new(RwLock::new(config.clone()));
 

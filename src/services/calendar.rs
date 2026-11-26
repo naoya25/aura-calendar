@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rrule::{RRule, RRuleSet, Tz};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use thiserror::Error;
 use urlencoding::encode;
@@ -26,8 +26,28 @@ pub struct EventAction {
     pub target: String,
 }
 
+#[derive(Default)]
+pub struct CalendarBodyCache {
+    bodies: HashMap<String, String>,
+}
+
+impl CalendarBodyCache {
+    fn resolve<E>(&mut self, url: &str, fetched: Result<String, E>) -> Result<&str, E> {
+        match fetched {
+            Ok(body) => {
+                self.bodies.insert(url.to_owned(), body);
+                Ok(self.bodies[url].as_str())
+            }
+            Err(e) => self.bodies.get(url).map(String::as_str).ok_or(e),
+        }
+    }
+}
+
 /// カレンダーデータを HTTP 取得・パースし、トレイ用イベントグループと設定日数分の全予定を返す（長周期で呼ぶ）。
-pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
+pub async fn fetch(
+    config: &AppConfig,
+    cache: &mut CalendarBodyCache,
+) -> Result<FetchResult, CalendarError> {
     if config.calendars.is_empty() {
         return Ok(FetchResult {
             tray_events: None,
@@ -48,7 +68,8 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
     let mut all_schedule: Vec<CachedEvent> = Vec::new();
 
     for (index, calendar) in config.calendars.iter().enumerate() {
-        let body = match fetch_calendar_body(&client, &calendar.ical_url).await {
+        let fetched = fetch_calendar_body(&client, &calendar.ical_url).await;
+        let body = match cache.resolve(&calendar.ical_url, fetched) {
             Ok(body) => body,
             Err(e) => {
                 first_error.get_or_insert(e);
@@ -57,7 +78,7 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
         };
         let context = resolved_calendar_context(index, calendar);
 
-        let concurrent = parse_concurrent_events_for_calendar(&body, now, &context);
+        let concurrent = parse_concurrent_events_for_calendar(body, now, &context);
         if !concurrent.is_empty() {
             let dt = concurrent[0].display_time(now);
             match best_display_time {
@@ -76,7 +97,7 @@ pub async fn fetch(config: &AppConfig) -> Result<FetchResult, CalendarError> {
             }
         }
 
-        let schedule: Vec<CachedEvent> = collect_relevant_events_for_calendar(&body, now, &context)
+        let schedule: Vec<CachedEvent> = collect_relevant_events_for_calendar(body, now, &context)
             .into_iter()
             .filter(|e| event_is_within_schedule_window(e.start, schedule_limit_date))
             .collect();
@@ -705,6 +726,32 @@ fn format_title(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn body_cache_returns_previous_body_when_fetch_fails() {
+        let mut cache = CalendarBodyCache::default();
+        assert_eq!(
+            cache.resolve::<&str>("https://a", Ok("first".to_string())),
+            Ok("first")
+        );
+        assert_eq!(cache.resolve("https://a", Err("timeout")), Ok("first"));
+    }
+
+    #[test]
+    fn body_cache_replaces_body_on_successful_fetch() {
+        let mut cache = CalendarBodyCache::default();
+        let _ = cache.resolve::<&str>("https://a", Ok("first".to_string()));
+        let _ = cache.resolve::<&str>("https://a", Ok("second".to_string()));
+        assert_eq!(cache.resolve("https://a", Err("timeout")), Ok("second"));
+    }
+
+    #[test]
+    fn body_cache_keeps_calendars_separate() {
+        let mut cache = CalendarBodyCache::default();
+        let _ = cache.resolve::<&str>("https://a", Ok("a-body".to_string()));
+        assert_eq!(cache.resolve("https://b", Err("timeout")), Err("timeout"));
+        assert_eq!(cache.resolve("https://a", Err("timeout")), Ok("a-body"));
+    }
 
     fn fixed_now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap()

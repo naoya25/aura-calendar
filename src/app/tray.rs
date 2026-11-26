@@ -12,7 +12,7 @@ use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
-use crate::services::calendar::{fetch, render_title, CachedEvent};
+use crate::services::calendar::{fetch, render_title, CachedEvent, CalendarBodyCache};
 use crate::ui::icon::menu_bar_icon;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use urlencoding::decode;
@@ -763,12 +763,13 @@ pub fn setup(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let mut shutdown_rx = shutdown_tx.subscribe();
 
         tauri::async_runtime::spawn(async move {
+            let mut body_cache = CalendarBodyCache::default();
             loop {
                 let config = fetch_config.read().map(|g| g.clone()).unwrap_or_default();
                 let fetch_duration =
                     std::time::Duration::from_secs(config.refresh_interval_seconds);
 
-                let (tray_events, schedule_events) = match fetch(&config).await {
+                let (tray_events, schedule_events) = match fetch(&config, &mut body_cache).await {
                     Ok(result) => (result.tray_events, result.schedule_events),
                     Err(e) => {
                         eprintln!("failed to fetch calendar: {e}");
